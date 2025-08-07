@@ -1,18 +1,40 @@
-# Virtual Environment
-venv/
-.venv/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
 env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 .env
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# IDE and OS files
+# IDE
 .vscode/
 .idea/
-.DS_Store
+*.swp
+*.swo
 
-temp.py
+# Streamlit
+.streamlit/secrets.toml
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Partial downloads
+*.partial
+
+.claude
