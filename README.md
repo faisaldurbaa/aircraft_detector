@@ -2,6 +2,8 @@
 
 A user-friendly web application built with Streamlit for detecting aircraft in images and videos using a fine-tuned YOLOv8 model.
 
+Access from [Streamlit](https://aircraftdetector.streamlit.app/). (Warning: Web Version is extremely slow due to cloud limitations.)
+
 ![App Screenshot](/assets/app_screenshot.png)
 
 ## ✨ Features
