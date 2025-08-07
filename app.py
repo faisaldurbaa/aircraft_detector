@@ -204,7 +204,7 @@ elif app_mode == 'Video':
                     start_time = time.time()
                     temp_dir = tempfile.mkdtemp()
                     output_video_path = str(Path(temp_dir) / "processed.mp4")
-                    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+                    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
                     out = cv2.VideoWriter(output_video_path, fourcc, video_info['fps'], (video_info['width'], video_info['height']))
                     
                     with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
