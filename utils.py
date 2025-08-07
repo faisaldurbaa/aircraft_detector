@@ -8,6 +8,10 @@ import io
 import zipfile
 import cv2
 import tempfile
+import warnings
+
+# Suppress specific streamlit warnings about ScriptRunContext
+warnings.filterwarnings("ignore", message=".*ScriptRunContext.*")
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -19,8 +23,11 @@ def load_model(model_path: Path) -> YOLO:
         model = YOLO(model_path)
         logging.info("Model loaded successfully.")
         return model
+    except FileNotFoundError:
+        st.error(f"Model file not found at: {model_path}")
+        st.stop()
     except Exception as e:
-        st.error(f"An error occurred while loading the model: {e}")
+        st.error(f"Failed to load model: {e}")
         st.stop()
 
 def resize_image(image: Image.Image, max_size: tuple[int, int] = (1920, 1080)) -> Image.Image:
@@ -59,6 +66,12 @@ def process_image(model: YOLO, image: Image.Image, confidence: float, iou: float
     """
     Processes a single image, returning the annotated image, detection count, and speed metrics.
     """
+    # Validate image format and size
+    if image is None:
+        raise ValueError("Invalid image: Image is None")
+    if image.size[0] < 32 or image.size[1] < 32:
+        raise ValueError(f"Image too small: {image.size}. Minimum size is 32x32 pixels")
+    
     # Resize image before processing
     image = resize_image(image)
     
@@ -75,21 +88,46 @@ def process_image(model: YOLO, image: Image.Image, confidence: float, iou: float
 
 def get_video_info(video_bytes: bytes) -> dict:
     """Validates a video from bytes and extracts its properties using OpenCV."""
-    # ... (This function remains unchanged from Phase 4) ...
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
-        tfile.write(video_bytes)
-        video_path = tfile.name
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        Path(video_path).unlink()
-        return {"error": "Could not open video file."}
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    cap.release()
-    Path(video_path).unlink()
-    if fps == 0 or frame_count == 0:
-        return {"error": "Could not read video properties."}
-    duration_seconds = frame_count / fps
-    return {"width": width, "height": height, "fps": fps, "frame_count": frame_count, "duration": duration_seconds}
+    if not video_bytes or len(video_bytes) == 0:
+        return {"error": "Empty video data"}
+    
+    video_path = None
+    cap = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
+            tfile.write(video_bytes)
+            video_path = tfile.name
+        
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return {"error": "Could not open video file. File may be corrupted or in unsupported format."}
+        
+        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        if fps <= 0 or frame_count <= 0 or width <= 0 or height <= 0:
+            return {"error": "Invalid video properties detected"}
+        
+        duration_seconds = frame_count / fps
+        return {
+            "width": width, 
+            "height": height, 
+            "fps": fps, 
+            "frame_count": frame_count, 
+            "duration": duration_seconds
+        }
+    
+    except Exception as e:
+        return {"error": f"Error analyzing video: {str(e)}"}
+    
+    finally:
+        # Ensure proper cleanup
+        if cap is not None:
+            cap.release()
+        if video_path and Path(video_path).exists():
+            try:
+                Path(video_path).unlink()
+            except OSError:
+                pass  # File already deleted or permission issue

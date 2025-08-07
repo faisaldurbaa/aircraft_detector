@@ -19,8 +19,8 @@ ASSETS_DIR = Path("assets")
 MODELS_DIR = Path("models")
 MODEL_PATH = MODELS_DIR / "best.pt"
 
-EXAMPLE_IMAGE_FILES = ["img1.jpeg", "img2.jpg"]
-EXAMPLE_VIDEO_FILE = "f16.mp4"
+EXAMPLE_IMAGE_FILES = ["img1.jpeg", "img2.jpeg"]
+EXAMPLE_VIDEO_FILE = "f18.mp4"
 FRAME_SKIP = 2
 
 # --- PAGE CONFIGURATION ---
@@ -69,12 +69,15 @@ if app_mode == "Images":
         with st.sidebar.container(border=True):
             st.image(str(image_path), use_container_width=True)
             if st.button("Click to Try this Example", key=f"try_{image_path.name}", use_container_width=True):
-                original_image = Image.open(image_path).convert("RGB")
-                proc_img, count, speed = process_image(model, original_image, confidence_threshold, iou_threshold)
-                st.session_state.processed_images[image_path.name] = {
-                    'original': original_image, 'processed': proc_img, 'detection_count': count, 'metrics': speed
-                }
-                st.rerun()
+                try:
+                    original_image = Image.open(image_path).convert("RGB")
+                    proc_img, count, speed = process_image(model, original_image, confidence_threshold, iou_threshold)
+                    st.session_state.processed_images[image_path.name] = {
+                        'original': original_image, 'processed': proc_img, 'detection_count': count, 'metrics': speed
+                    }
+                    st.rerun()
+                except (ValueError, OSError) as e:
+                    st.error(f"Failed to process example image: {e}")
 elif app_mode == "Video":
     st.sidebar.subheader("🎥 Video Example")
     st.sidebar.markdown("Click a button to load the example video.")
@@ -96,6 +99,9 @@ with st.sidebar.expander("ℹ️ About This App"):
     - **Fast & Accurate:** Built for performance and precision.
     - **User-Friendly:** Easy-to-use interface with real-time feedback.
     - **Adjustable:** Tune detection parameters to fit your needs.
+    
+    **Developer:** [Faisal Durbaa](https://github.com/faisaldurbaa)  
+    **Repository:** [aircraft_detector](https://github.com/faisaldurbaa/aircraft_detector)
     """)
 
 # --- MAIN INTERFACE ---
@@ -114,9 +120,13 @@ if app_mode == 'Images':
             if files_to_process:
                 with st.spinner(f"Analyzing {len(files_to_process)} images..."):
                     for file in files_to_process:
-                        orig_img = Image.open(file).convert("RGB")
-                        proc_img, count, speed = process_image(model, orig_img, confidence_threshold, iou_threshold)
-                        st.session_state.processed_images[file.name] = {'original': orig_img, 'processed': proc_img, 'detection_count': count, 'metrics': speed}
+                        try:
+                            orig_img = Image.open(file).convert("RGB")
+                            proc_img, count, speed = process_image(model, orig_img, confidence_threshold, iou_threshold)
+                            st.session_state.processed_images[file.name] = {'original': orig_img, 'processed': proc_img, 'detection_count': count, 'metrics': speed}
+                        except (ValueError, OSError) as e:
+                            st.error(f"Failed to process {file.name}: {e}")
+                            continue
                 st.rerun()
 
     if st.session_state.processed_images:
@@ -158,11 +168,12 @@ if app_mode == 'Images':
 
 elif app_mode == 'Video':
     st.header("🎥 Video Analysis")
+    
     if st.session_state.processed_video_bytes:
         st.subheader("Processed Video")
         m1, m2, m3 = st.columns(3)
         m1.metric("Video Duration", f"{st.session_state.video_metrics.get('duration', 0):.1f}s")
-        m2.metric("Total Aircraft Detected", f"{st.session_state.video_metrics.get('total_detections', 0)} ✈️")
+        m2.metric("Total Aircraft Detected on All Frames", f"{st.session_state.video_metrics.get('total_detections', 0)} ✈️")
         m3.metric("Processing FPS", f"{st.session_state.video_metrics.get('fps', 0):.1f}")
         st.video(st.session_state.processed_video_bytes)
         st.download_button( "Download Processed Video", st.session_state.processed_video_bytes, f"detected_{st.session_state.original_video_name}", "video/mp4", use_container_width=True)
@@ -174,74 +185,102 @@ elif app_mode == 'Video':
             st.rerun()
 
     elif st.session_state.uploaded_video_bytes:
-        # ... (same as before)
-        pass # UI to show preview and process button
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader(f"Original: {st.session_state.original_video_name}")
+            st.video(st.session_state.uploaded_video_bytes)
+        with col2:
+            st.subheader("Processing Preview")
+            preview_container = st.empty()
 
+        if st.button("Process Video", type="primary", use_container_width=True):
+            video_info = get_video_info(st.session_state.uploaded_video_bytes)
+            
+            # Validate video info before processing
+            if 'error' in video_info:
+                st.error(f"Cannot process video: {video_info['error']}")
+            else:
+                with st.spinner("Analyzing video... This could take a while for longer videos."):
+                    start_time = time.time()
+                    temp_dir = tempfile.mkdtemp()
+                    output_video_path = str(Path(temp_dir) / "processed.mp4")
+                    fourcc = cv2.VideoWriter_fourcc(*'avc1')
+                    out = cv2.VideoWriter(output_video_path, fourcc, video_info['fps'], (video_info['width'], video_info['height']))
+                    
+                    with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
+                        tfile.write(st.session_state.uploaded_video_bytes)
+                        cap = cv2.VideoCapture(tfile.name)
+                    
+                    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                    progress_bar = st.progress(0, text="Starting processing...")
+                    total_detections_in_video = 0
+                    last_good_annotated_frame = None
+
+                    for frame_idx in range(total_frames):
+                        ret, frame = cap.read()
+                        if not ret: break
+                        
+                        # Memory management: limit frame size
+                        if frame.shape[0] > 1080 or frame.shape[1] > 1920:
+                            frame = cv2.resize(frame, (min(1920, frame.shape[1]), min(1080, frame.shape[0])))
+                        
+                        frame_to_write = last_good_annotated_frame if last_good_annotated_frame is not None else frame
+                        
+                        if frame_idx % FRAME_SKIP == 0:
+                            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            try:
+                                results = model.predict(source=frame_rgb, conf=confidence_threshold, iou=iou_threshold, verbose=False)
+                                annotated_frame = results[0].plot()
+                                total_detections_in_video += len(results[0].boxes) if results[0].boxes is not None else 0
+                                last_good_annotated_frame = annotated_frame
+                                frame_to_write = annotated_frame
+                                # Update preview every few frames to reduce UI overhead
+                                if frame_idx % (FRAME_SKIP * 3) == 0:
+                                    preview_container.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB))
+                            except Exception as e:
+                                st.warning(f"Error processing frame {frame_idx}: {e}")
+                                # Continue with original frame
+                                pass
+                        
+                        out.write(frame_to_write)
+                        progress_bar.progress((frame_idx + 1) / total_frames, text=f"Processing frame {frame_idx + 1}/{total_frames}")
+
+                    cap.release()
+                    out.release()
+                    end_time = time.time()
+                    
+                    with open(output_video_path, "rb") as f:
+                        st.session_state.processed_video_bytes = f.read()
+                    
+                    st.session_state.video_metrics['total_detections'] = total_detections_in_video
+                    st.session_state.video_metrics['duration'] = video_info['duration']
+                    processing_duration = end_time - start_time
+                    st.session_state.video_metrics['fps'] = total_frames / processing_duration if processing_duration > 0 else 0
+                    
+                    try: 
+                        Path(tfile.name).unlink()
+                        Path(output_video_path).unlink() 
+                        Path(temp_dir).rmdir()
+                    except FileNotFoundError:
+                        pass  # Files already cleaned up
+                    except OSError as e: 
+                        st.warning(f"Failed to clean up temp files: {e}")
+                    
+                    st.success(f"✅ Video processed successfully in {processing_duration:.2f} seconds!")
+                    st.rerun()
     else:
-        uploaded_file = st.file_uploader( "Upload a video file for analysis", label_visibility="collapsed", type=["mp4", "avi", "mov"], key=f"video_uploader_{st.session_state.video_upload_key}")
+        uploaded_file = st.file_uploader( "Upload a video file for analysis (Max duration: 30 seconds)", label_visibility="collapsed", type=["mp4", "avi", "mov"], key=f"video_uploader_{st.session_state.video_upload_key}")
         if uploaded_file:
-            st.session_state.uploaded_video_bytes = uploaded_file.getvalue()
-            st.session_state.original_video_name = uploaded_file.name
-            st.session_state.video_metrics = {}
-            st.rerun()
-
-if app_mode == 'Video' and st.session_state.uploaded_video_bytes and not st.session_state.processed_video_bytes:
-    # This block now runs only when a video is uploaded but not yet processed
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader(f"Original: {st.session_state.original_video_name}")
-        st.video(st.session_state.uploaded_video_bytes)
-    with col2:
-        st.subheader("Processing Preview")
-        preview_container = st.empty()
-
-    if st.button("Process Video", type="primary", use_container_width=True):
-        video_info = get_video_info(st.session_state.uploaded_video_bytes)
-        
-        with st.spinner("Analyzing video... This could take a while for longer videos."):
-            start_time = time.time()
-            temp_dir = tempfile.mkdtemp()
-            output_video_path = str(Path(temp_dir) / "processed.mp4")
-            fourcc = cv2.VideoWriter_fourcc(*'avc1')
-            out = cv2.VideoWriter(output_video_path, fourcc, video_info['fps'], (video_info['width'], video_info['height']))
+            video_bytes = uploaded_file.getvalue()
             
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tfile:
-                tfile.write(st.session_state.uploaded_video_bytes)
-                cap = cv2.VideoCapture(tfile.name)
-            
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            progress_bar = st.progress(0, text="Starting processing...")
-            total_detections_in_video = 0
-            
-            for frame_idx in range(total_frames):
-                ret, frame = cap.read()
-                if not ret: break
-                
-                if frame_idx % FRAME_SKIP == 0:
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    results = model.predict(source=frame_rgb, conf=confidence_threshold, iou=iou_threshold, verbose=False)
-                    annotated_frame = results[0].plot()
-                    total_detections_in_video += len(results[0].boxes)
-                    preview_container.image(cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB))
-                    out.write(annotated_frame)
-                else:
-                    out.write(frame)
-                progress_bar.progress((frame_idx + 1) / total_frames, text=f"Processing frame {frame_idx + 1}/{total_frames}")
-
-            cap.release()
-            out.release()
-            end_time = time.time()
-            
-            with open(output_video_path, "rb") as f:
-                st.session_state.processed_video_bytes = f.read()
-            
-            # Store metrics
-            st.session_state.video_metrics['total_detections'] = total_detections_in_video
-            st.session_state.video_metrics['duration'] = video_info['duration']
-            st.session_state.video_metrics['fps'] = total_frames / (end_time - start_time) if (end_time - start_time) > 0 else 0
-            
-            try: Path(tfile.name).unlink(); Path(output_video_path).unlink(); Path(temp_dir).rmdir()
-            except Exception as e: st.warning(f"Failed to clean up temp files: {e}")
-            
-            st.success(f"✅ Video processed successfully in {end_time - start_time:.2f} seconds!")
-            st.rerun()
+            # Validate video duration (30 seconds max)
+            video_info = get_video_info(video_bytes)
+            if 'error' in video_info:
+                st.error(f"Invalid video file: {video_info['error']}")
+            elif video_info['duration'] > 30:
+                st.error(f"Video duration ({video_info['duration']:.1f}s) exceeds maximum allowed duration of 30 seconds.")
+            else:
+                st.session_state.uploaded_video_bytes = video_bytes
+                st.session_state.original_video_name = uploaded_file.name
+                st.session_state.video_metrics = {}
+                st.rerun()
