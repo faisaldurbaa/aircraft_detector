@@ -1,0 +1,31 @@
+# 3/10 iterations complete ✅ (35564.27s)
+# Results saved to aircraft_detection/yolov8m_tuning_run_test
+# Best fitness=0.70025 observed at iteration 3
+# Best fitness metrics are {'metrics/precision(B)': 0.75028, 'metrics/recall(B)': 0.67014, 'metrics/mAP50(B)': 0.75703, 'metrics/mAP50-95(B)': 0.69394, 'val/box_loss': 0.34648, 'val/cls_loss': 1.0273, 'val/dfl_loss': 1.02884, 'fitness': 0.70025}
+# Best fitness model is aircraft_detection/train3
+# Best fitness hyperparameters are printed below.
+
+lr0: 0.00927
+lrf: 0.01013
+momentum: 0.97092
+weight_decay: 0.00059
+warmup_epochs: 3.72176
+warmup_momentum: 0.9055
+box: 6.22522
+cls: 0.54008
+dfl: 1.65502
+hsv_h: 0.01897
+hsv_s: 0.811
+hsv_v: 0.42904
+degrees: 0.0
+translate: 0.08497
+scale: 0.68128
+shear: 0.0
+perspective: 0.0
+flipud: 0.0
+fliplr: 0.43654
+bgr: 0.0
+mosaic: 0.99352
+mixup: 0.0
+cutmix: 0.0
+copy_paste: 0.0
