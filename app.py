@@ -433,7 +433,6 @@ elif app_mode == 'Video':
 
                             cap.release()
                             out.release()
-                            cv2.destroyAllWindows()  # Clean up any OpenCV windows
                             end_time = time.time()
                     
                             # Verify output video was created and has content
