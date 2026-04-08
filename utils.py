@@ -588,12 +588,43 @@ def is_system_healthy() -> Tuple[bool, List[str]]:
 def load_model(model_path: Path) -> YOLO:
     """Loads a YOLOv8 model from the specified path."""
     try:
-        model = YOLO(model_path)
+        # Streamlit Cloud often checks out Git LFS pointer files instead of
+        # the real weights. Detect that case and fall back to a public model.
+        selected_model_source = str(model_path)
+        if model_path.exists() and model_path.stat().st_size < 1024:
+            try:
+                pointer_head = model_path.read_text(encoding="utf-8", errors="ignore")[:200]
+            except OSError:
+                pointer_head = ""
+            if "git-lfs.github.com/spec/v1" in pointer_head:
+                fallback_model = "yolov8n.pt"
+                st.warning(
+                    f"Custom weights '{model_path.name}' are unavailable in this deployment. "
+                    f"Falling back to '{fallback_model}'."
+                )
+                logging.warning(
+                    "Detected Git LFS pointer for model file '%s'; using fallback '%s'",
+                    model_path,
+                    fallback_model,
+                )
+                selected_model_source = fallback_model
+
+        model = YOLO(selected_model_source)
         logging.info("Model loaded successfully.")
         return model
     except FileNotFoundError:
-        st.error(f"Model file not found at: {model_path}")
-        st.stop()
+        fallback_model = "yolov8n.pt"
+        logging.warning(
+            "Model file not found at '%s'; using fallback '%s'",
+            model_path,
+            fallback_model,
+        )
+        st.warning(
+            f"Custom model not found at '{model_path}'. "
+            f"Using fallback model '{fallback_model}'."
+        )
+        model = YOLO(fallback_model)
+        return model
     except Exception as e:
         st.error(f"Failed to load model: {e}")
         st.stop()
