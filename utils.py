@@ -1,7 +1,15 @@
 ### utils.py
+import os
+import tempfile
+from pathlib import Path
+
+os.environ.setdefault(
+    "YOLO_CONFIG_DIR",
+    str(Path(tempfile.gettempdir()) / "Ultralytics"),
+)
+
 import streamlit as st
 from ultralytics import YOLO
-from pathlib import Path
 import logging
 import json
 import psutil
@@ -13,7 +21,6 @@ from PIL import Image
 import io
 import zipfile
 import cv2
-import tempfile
 import warnings
 import mimetypes
 import hashlib

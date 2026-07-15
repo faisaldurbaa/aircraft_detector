@@ -38,3 +38,8 @@ Thumbs.db
 *.partial
 
 .claude
+
+# Local design context (Impeccable) — keep off remote
+PRODUCT.md
+DESIGN.md
+.impeccable/

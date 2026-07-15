@@ -1,0 +1,209 @@
+/* Hangar Briefing Console — lean Streamlit overrides (Cloud free-tier safe) */
+:root {
+  --hangar-ink: #0c0e11;
+  --panel-steel: #15191e;
+  --instrument-gray: #2c333c;
+  --briefing-white: #e6e8eb;
+  --muted-scope: #a0a8b0;
+  --tactical-amber: #c9942a;
+  --tactical-amber-deep: #a87a1f;
+  --status-ok: #5a8f6b;
+  --status-warn: #c9942a;
+  --status-err: #c45c4a;
+  --font-sans: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur: 160ms;
+}
+
+html, body, [data-testid="stAppViewContainer"], .stApp {
+  font-family: var(--font-sans) !important;
+  background-color: var(--hangar-ink) !important;
+  color: var(--briefing-white);
+}
+
+/* Sidebar as panel steel */
+[data-testid="stSidebar"] {
+  background-color: var(--panel-steel) !important;
+  border-right: 1px solid var(--instrument-gray);
+}
+
+[data-testid="stSidebar"] * {
+  font-family: var(--font-sans) !important;
+}
+
+/* Typography hierarchy */
+h1, h2, h3, h4 {
+  font-family: var(--font-sans) !important;
+  letter-spacing: -0.02em;
+  font-weight: 600 !important;
+  color: var(--briefing-white) !important;
+}
+
+h1 {
+  font-size: 1.75rem !important;
+  line-height: 1.2 !important;
+  margin-bottom: 0.25rem !important;
+}
+
+h2 {
+  font-size: 1.25rem !important;
+  line-height: 1.3 !important;
+}
+
+h3, h4 {
+  font-size: 1.05rem !important;
+}
+
+p, label, .stMarkdown, .stCaption {
+  color: var(--briefing-white);
+}
+
+.stCaption, [data-testid="stCaptionContainer"] {
+  color: var(--muted-scope) !important;
+}
+
+/* Metric readouts in mono */
+[data-testid="stMetricValue"] {
+  font-family: var(--font-mono) !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+[data-testid="stMetricLabel"] {
+  color: var(--muted-scope) !important;
+  text-transform: uppercase;
+  font-size: 0.7rem !important;
+  letter-spacing: 0.06em !important;
+}
+
+/* Primary CTA — scarce amber */
+.stButton > button[kind="primary"],
+.stButton > button[data-testid="baseButton-primary"],
+button[kind="primary"] {
+  background-color: var(--tactical-amber) !important;
+  color: var(--hangar-ink) !important;
+  border: 1px solid var(--tactical-amber) !important;
+  border-radius: var(--radius-sm) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.02em;
+  transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+}
+
+.stButton > button[kind="primary"]:hover,
+button[kind="primary"]:hover {
+  background-color: var(--tactical-amber-deep) !important;
+  border-color: var(--tactical-amber-deep) !important;
+  color: var(--hangar-ink) !important;
+}
+
+/* Secondary buttons — quiet steel */
+.stButton > button:not([kind="primary"]),
+.stDownloadButton > button {
+  background-color: transparent !important;
+  color: var(--briefing-white) !important;
+  border: 1px solid var(--instrument-gray) !important;
+  border-radius: var(--radius-sm) !important;
+  transition: border-color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
+}
+
+.stButton > button:not([kind="primary"]):hover,
+.stDownloadButton > button:hover {
+  border-color: var(--muted-scope) !important;
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Focus — visible, no glow bloom */
+.stButton > button:focus-visible,
+.stDownloadButton > button:focus-visible,
+[data-baseweb="slider"] *:focus-visible {
+  outline: 2px solid var(--tactical-amber) !important;
+  outline-offset: 2px !important;
+}
+
+/* Sliders — amber track accent only on active */
+[data-testid="stSlider"] [role="slider"] {
+  background-color: var(--tactical-amber) !important;
+}
+
+/* File uploader — instrument frame */
+[data-testid="stFileUploader"] section {
+  border: 1px dashed var(--instrument-gray) !important;
+  border-radius: var(--radius-md) !important;
+  background-color: rgba(21, 25, 30, 0.6) !important;
+}
+
+/* Expanders / containers — hairline, no float shadow */
+[data-testid="stExpander"],
+[data-testid="stVerticalBlockBorderWrapper"] {
+  border-color: var(--instrument-gray) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: none !important;
+}
+
+/* Status messages — desaturated instrument states */
+[data-testid="stAlert"] {
+  border-radius: var(--radius-sm) !important;
+  border-width: 1px !important;
+}
+
+/* Mission brief lead-in */
+.hangar-brief {
+  color: var(--muted-scope);
+  font-size: 0.95rem;
+  max-width: 62ch;
+  margin: 0 0 1.25rem 0;
+  line-height: 1.5;
+}
+
+.hangar-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tactical-amber);
+  margin: 0 0 0.35rem 0;
+}
+
+.hangar-empty {
+  border: 1px solid var(--instrument-gray);
+  border-radius: var(--radius-md);
+  padding: 1.5rem 1.25rem;
+  background: var(--panel-steel);
+  max-width: 40rem;
+}
+
+.hangar-empty strong {
+  color: var(--briefing-white);
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.hangar-empty p {
+  color: var(--muted-scope);
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.hangar-divider {
+  border: none;
+  border-top: 1px solid var(--instrument-gray);
+  margin: 1.25rem 0;
+}
+
+/* Hide Streamlit chrome noise where possible */
+#MainMenu { visibility: hidden; }
+header[data-testid="stHeader"] {
+  background: transparent !important;
+}
+footer { visibility: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

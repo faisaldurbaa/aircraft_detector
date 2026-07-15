@@ -26,20 +26,20 @@ cd aircraft_detector
 ```
 
 **2. Set Up Virtual Environment:**
-It's highly recommended to use a virtual environment.
+Use **Python 3.12 or 3.13** (Streamlit Cloud uses 3.13). Avoid 3.14 if you can.
 ```bash
-# Create the environment
-python -m venv venv
+# Create the environment (prefer python3.13 if installed)
+python3.13 -m venv .venv
 
 # Activate the environment
 # On Windows:
-# venv\Scripts\activate
+# .venv\Scripts\activate
 # On macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
 **3. Install Dependencies:**
-This project uses Git LFS for model storage. Make sure you have it installed. Then, install the required Python packages.
+This project uses Git LFS for model storage. First install is large (~400MB+) because YOLO pulls **PyTorch** (~110MB), OpenCV, Polars, etc. A slow network makes it look hung — it usually is not.
 ```bash
 # Install Git LFS (if you haven't already)
 git lfs install
@@ -49,6 +49,9 @@ git lfs pull
 
 # Install Python packages
 pip install -r requirements.txt
+
+# Optional: drop the duplicate GUI OpenCV wheel Ultralytics may also install
+pip uninstall -y opencv-python
 ```
 
 **4. Run the Streamlit App:**

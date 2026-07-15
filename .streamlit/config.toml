@@ -1,2 +1,9 @@
 [server]
 maxUploadSize = 50
+fileWatcherType = "none"
+folderWatchBlacklist = [
+  "models",
+  "assets",
+  "Model Training Files",
+  "__pycache__",
+]

@@ -1,6 +1,21 @@
-streamlit>=1.28.0,<2.0.0
-ultralytics>=8.0.0,<9.0.0
-opencv-python-headless>=4.8.0,<5.0.0
-Pillow>=9.5.0,<11.0.0
-numpy>=1.21.0,<2.0.0
-psutil>=5.8.0,<6.0.0
+# Direct app imports. Ultralytics also pulls torch, torchvision, matplotlib,
+# polars, etc. — expect a multi‑hundred‑MB first install (torch alone ~110MB).
+#
+# Prefer Python 3.12 or 3.13 (matches Streamlit Cloud). Avoid 3.14 for fewer
+# wheel surprises.
+#
+# opencv-python-headless: Cloud-friendly OpenCV (no GUI). Ultralytics may still
+# pull opencv-python as well (~50MB duplicate); safe to
+# `pip uninstall -y opencv-python` afterward if both are present.
+
+streamlit>=1.49.0,<2.0.0
+ultralytics>=8.3.0,<9.0.0
+opencv-python-headless>=4.10.0,<6.0.0
+Pillow>=10.0.0,<13.0.0
+numpy>=1.26.0,<3.0.0
+psutil>=5.9.0,<8.0.0
+
+# Pin torch so pip resolves faster and versions stay Cloud-compatible.
+# On macOS this is the CPU/MPS wheel (~110MB), not the multi‑GB CUDA build.
+torch>=2.2.0,<3.0.0
+torchvision>=0.17.0,<1.0.0
