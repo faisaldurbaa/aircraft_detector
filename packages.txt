@@ -2,4 +2,4 @@ ffmpeg
 libsm6
 libxext6
 libgl1
-libx264-164
+libx264

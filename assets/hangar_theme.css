@@ -169,13 +169,15 @@ p, label, .stMarkdown {
   max-width: 48rem;
 }
 
-.hangar-kicker {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
+.hangar-masthead h1 {
+  font-family: var(--font-mono) !important;
+  font-size: 1.85rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.08em !important;
   text-transform: uppercase;
-  color: var(--tactical-amber);
-  margin: 0 0 0.35rem 0;
+  color: var(--briefing-white) !important;
+  margin: 0 0 0.2rem 0 !important;
+  line-height: 1.2 !important;
 }
 
 .hangar-product {

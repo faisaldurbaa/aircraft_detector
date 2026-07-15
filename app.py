@@ -2,6 +2,7 @@
 import streamlit as st
 from PIL import Image
 from pathlib import Path
+from html import escape
 import time
 import cv2
 import tempfile
@@ -10,7 +11,7 @@ import tempfile
 from utils import (
     load_model, image_to_bytes, create_zip,
     process_image, get_video_info, validate_file_upload,
-    generate_file_hash, check_rate_limit,
+    generate_file_hash, get_rate_limit_status, consume_rate_limit,
     get_rate_limit_stats, create_session, validate_session, get_session_stats,
     get_system_health, is_system_healthy, app_logger
 )
@@ -119,7 +120,7 @@ def _store_processed_image(
         "detection_count": count,
         "metrics": metrics,
     }
-    st.session_state._annotated_bytes[name] = image_to_bytes(processed)
+    # PNG / ZIP bytes are built lazily on download to save Cloud RAM
     st.session_state._zip_fingerprint = None
     st.session_state._results_zip = None
 
@@ -133,9 +134,6 @@ def _ensure_results_zip() -> bytes:
     if st.session_state._zip_fingerprint != fingerprint or st.session_state._results_zip is None:
         st.session_state._results_zip = create_zip(st.session_state.processed_images)
         st.session_state._zip_fingerprint = fingerprint
-        for name, data in st.session_state.processed_images.items():
-            if name not in st.session_state._annotated_bytes:
-                st.session_state._annotated_bytes[name] = image_to_bytes(data["processed"])
     return st.session_state._results_zip
 
 
@@ -421,20 +419,28 @@ def _run_sample_video() -> bool:
 
 
 # --- SIDEBAR MORE SAMPLES (secondary path; main Run sample is primary) ---
-# One rate-limit probe per run — check_rate_limit consumes a slot when allowed.
-_rate_allowed, _rate_message, _rate_remaining = check_rate_limit()
+_rate_allowed, _rate_message, _rate_remaining = get_rate_limit_status()
 if app_mode == "Images":
     st.sidebar.markdown('<p class="hangar-side-label">More samples</p>', unsafe_allow_html=True)
     st.sidebar.caption("One click runs a sample detection.")
     for image_path in _example_image_paths():
         with st.sidebar.container(border=True):
             st.image(str(image_path), width="stretch")
-            if st.button("Try this", key=f"try_{image_path.name}", width="stretch"):
-                try:
-                    _run_sample_image(image_path)
-                    st.rerun()
-                except (ValueError, OSError) as e:
-                    st.error(f"Failed to process sample: {e}")
+            if st.button(
+                "Try this",
+                key=f"try_{image_path.name}",
+                width="stretch",
+                disabled=not _rate_allowed,
+            ):
+                allowed, msg, _ = consume_rate_limit()
+                if not allowed:
+                    st.error(msg)
+                else:
+                    try:
+                        _run_sample_image(image_path)
+                        st.rerun()
+                    except (ValueError, OSError) as e:
+                        st.error(f"Failed to process sample: {e}")
 elif app_mode == "Video":
     st.sidebar.markdown('<p class="hangar-side-label">More samples</p>', unsafe_allow_html=True)
     st.sidebar.caption("One click loads and runs the sample clip.")
@@ -448,13 +454,17 @@ elif app_mode == "Video":
                 key="ex_video",
                 disabled=not _rate_allowed,
             ):
-                try:
-                    with st.spinner("Running sample video… longer clips take more time."):
-                        ok = _run_sample_video()
-                    if ok:
-                        st.rerun()
-                except (ValueError, OSError) as e:
-                    st.error(f"Failed to process sample: {e}")
+                allowed, msg, _ = consume_rate_limit()
+                if not allowed:
+                    st.error(msg)
+                else:
+                    try:
+                        with st.spinner("Running sample video… longer clips take more time."):
+                            ok = _run_sample_video()
+                        if ok:
+                            st.rerun()
+                    except (ValueError, OSError) as e:
+                        st.error(f"Failed to process sample: {e}")
 
 health = get_system_health()
 is_healthy, health_issues = is_system_healthy()
@@ -506,7 +516,6 @@ if _has_payload:
     st.html(
         f"""
         <div class="hangar-masthead">
-          <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
           <h1>Aircraft Detection</h1>
           <p class="hangar-product">Hangar Briefing Console</p>
           <p class="{_ready_class}">{_ready_label}</p>
@@ -517,7 +526,6 @@ else:
     st.html(
         f"""
         <div class="hangar-masthead">
-          <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
           <h1>Aircraft Detection</h1>
           <p class="hangar-product">Hangar Briefing Console</p>
           <p class="hangar-brief">Run sample below for a one-click detection, or upload your own. Annotated boxes and timing land in Results.</p>
@@ -568,7 +576,7 @@ def _render_image_uploader(key: str = "image_uploader") -> bool:
 
     st.caption(f"{len(valid_files)} of {len(uploaded_files)} files validated")
 
-    rate_allowed, rate_message, remaining = check_rate_limit()
+    rate_allowed, rate_message, remaining = get_rate_limit_status()
 
     if not rate_allowed:
         st.error(rate_message)
@@ -583,20 +591,26 @@ def _render_image_uploader(key: str = "image_uploader") -> bool:
         disabled=not rate_allowed,
         key=f"run_detection_{key}",
     ):
-        files_to_process = [f for f in valid_files if f.name not in st.session_state.processed_images]
-        if files_to_process:
-            with st.spinner(f"Analyzing {len(files_to_process)} images…"):
-                for file in files_to_process:
-                    try:
-                        orig_img = Image.open(file).convert("RGB")
-                        proc_img, count, speed = process_image(
-                            model, orig_img, confidence_threshold, iou_threshold
-                        )
-                        _store_processed_image(file.name, orig_img, proc_img, count, speed)
-                    except (ValueError, OSError) as e:
-                        st.error(f"Failed to process {file.name}: {e}")
-                        continue
-            st.rerun()
+        allowed, msg, _ = consume_rate_limit()
+        if not allowed:
+            st.error(msg)
+        else:
+            files_to_process = [
+                f for f in valid_files if f.name not in st.session_state.processed_images
+            ]
+            if files_to_process:
+                with st.spinner(f"Analyzing {len(files_to_process)} images…"):
+                    for file in files_to_process:
+                        try:
+                            orig_img = Image.open(file).convert("RGB")
+                            proc_img, count, speed = process_image(
+                                model, orig_img, confidence_threshold, iou_threshold
+                            )
+                            _store_processed_image(file.name, orig_img, proc_img, count, speed)
+                        except (ValueError, OSError) as e:
+                            st.error(f"Failed to process {file.name}: {e}")
+                            continue
+                st.rerun()
     return True
 
 
@@ -670,7 +684,7 @@ if app_mode == "Images":
                 st.html(
                     f"""
                     <div class="hangar-result-meta">
-                      <span class="name">{filename}</span>
+                      <span class="name">{escape(filename)}</span>
                       <span class="count">{det} {det_label}</span>
                     </div>
                     """
@@ -706,13 +720,23 @@ if app_mode == "Images":
         has_upload = _render_image_uploader(key="image_uploader")
         if not has_upload:
             if sample_paths:
-                if st.button("Run sample", type="primary", width="stretch", key="main_run_sample"):
-                    try:
-                        with st.spinner("Running sample detection…"):
-                            _run_sample_image(sample_paths[0])
-                        st.rerun()
-                    except (ValueError, OSError) as e:
-                        st.error(f"Failed to process sample: {e}")
+                if st.button(
+                    "Run sample",
+                    type="primary",
+                    width="stretch",
+                    key="main_run_sample",
+                    disabled=not _rate_allowed,
+                ):
+                    allowed, msg, _ = consume_rate_limit()
+                    if not allowed:
+                        st.error(msg)
+                    else:
+                        try:
+                            with st.spinner("Running sample detection…"):
+                                _run_sample_image(sample_paths[0])
+                            st.rerun()
+                        except (ValueError, OSError) as e:
+                            st.error(f"Failed to process sample: {e}")
             st.html(
                 """
                 <div class="hangar-empty">
@@ -770,7 +794,7 @@ elif app_mode == "Video":
             st.html(
                 f"""
                 <div class="hangar-result-meta">
-                  <span class="name">{st.session_state.original_video_name}</span>
+                  <span class="name">{escape(st.session_state.original_video_name)}</span>
                   <span class="count">Source</span>
                 </div>
                 """
@@ -787,7 +811,7 @@ elif app_mode == "Video":
             )
             preview_container = st.empty()
 
-        rate_allowed, rate_message, remaining = check_rate_limit()
+        rate_allowed, rate_message, remaining = get_rate_limit_status()
 
         if not rate_allowed:
             st.error(rate_message)
@@ -796,10 +820,14 @@ elif app_mode == "Video":
             st.caption(rate_message)
 
         if st.button("Run detection", type="primary", width="stretch", disabled=not rate_allowed):
-            with st.spinner("Analyzing video… longer clips take more time."):
-                ok = _process_uploaded_video(preview_container=preview_container)
-            if ok:
-                st.rerun()
+            allowed, msg, _ = consume_rate_limit()
+            if not allowed:
+                st.error(msg)
+            else:
+                with st.spinner("Analyzing video… longer clips take more time."):
+                    ok = _process_uploaded_video(preview_container=preview_container)
+                if ok:
+                    st.rerun()
     else:
         st.header("Video")
         example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
@@ -843,13 +871,17 @@ elif app_mode == "Video":
                     key="main_run_sample_video",
                     disabled=not _rate_allowed,
                 ):
-                    try:
-                        with st.spinner("Running sample video… longer clips take more time."):
-                            ok = _run_sample_video()
-                        if ok:
-                            st.rerun()
-                    except (ValueError, OSError) as e:
-                        st.error(f"Failed to process sample: {e}")
+                    allowed, msg, _ = consume_rate_limit()
+                    if not allowed:
+                        st.error(msg)
+                    else:
+                        try:
+                            with st.spinner("Running sample video… longer clips take more time."):
+                                ok = _run_sample_video()
+                            if ok:
+                                st.rerun()
+                        except (ValueError, OSError) as e:
+                            st.error(f"Failed to process sample: {e}")
             st.html(
                 """
                 <div class="hangar-empty">

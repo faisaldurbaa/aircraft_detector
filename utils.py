@@ -165,7 +165,7 @@ logging.basicConfig(
 )
 
 # Security configuration
-MAX_FILE_SIZE_MB = 100  # Maximum file size in MB
+MAX_FILE_SIZE_MB = 50  # Match .streamlit/config.toml maxUploadSize
 ALLOWED_IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
 ALLOWED_VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
 ALLOWED_IMAGE_MIMES = {'image/jpeg', 'image/png', 'image/bmp', 'image/tiff', 'image/webp'}
@@ -362,47 +362,80 @@ def get_client_id() -> str:
     except ImportError:
         return "default_client"
 
-def check_rate_limit(client_id: str = None) -> Tuple[bool, str, int]:
-    """Checks if client is within rate limits.
-    
-    Args:
-        client_id: Unique client identifier (auto-generated if None)
-    
+def _prune_rate_limit_window(client_id: str) -> Tuple[bool, str, int, deque]:
+    """Shared cooldown + window cleanup. Does not record a request.
+
     Returns:
-        Tuple of (is_allowed, message, remaining_requests)
+        (allowed, message, remaining, client_requests_deque)
     """
-    if client_id is None:
-        client_id = get_client_id()
-    
     current_time = time.time()
-    
-    # Check if client is in cooldown period
+
     if client_id in _rate_limiter_blocked:
         blocked_until = _rate_limiter_blocked[client_id]
         if current_time < blocked_until:
             remaining_cooldown = int(blocked_until - current_time)
-            return False, f"Rate limit exceeded. Try again in {remaining_cooldown} seconds.", 0
-        else:
-            # Cooldown period expired, remove from blocked list
-            del _rate_limiter_blocked[client_id]
-    
-    # Clean up old requests outside the time window
+            return (
+                False,
+                f"Rate limit exceeded. Try again in {remaining_cooldown} seconds.",
+                0,
+                _rate_limiter_storage[client_id],
+            )
+        del _rate_limiter_blocked[client_id]
+
     client_requests = _rate_limiter_storage[client_id]
     cutoff_time = current_time - RATE_LIMIT_WINDOW
-    
     while client_requests and client_requests[0] < cutoff_time:
         client_requests.popleft()
-    
-    # Check if under rate limit
-    if len(client_requests) < RATE_LIMIT_REQUESTS:
-        client_requests.append(current_time)
-        remaining = RATE_LIMIT_REQUESTS - len(client_requests)
-        return True, f"Request allowed. {remaining} requests remaining.", remaining
-    else:
-        # Rate limit exceeded, add to blocked list
-        _rate_limiter_blocked[client_id] = current_time + RATE_LIMIT_COOLDOWN
-        logging.warning(f"Rate limit exceeded for client {client_id}")
-        return False, f"Rate limit exceeded ({RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW//60} minutes). Cooldown: {RATE_LIMIT_COOLDOWN} seconds.", 0
+
+    used = len(client_requests)
+    if used < RATE_LIMIT_REQUESTS:
+        remaining = RATE_LIMIT_REQUESTS - used
+        return True, f"Request allowed. {remaining} requests remaining.", remaining, client_requests
+
+    return (
+        False,
+        (
+            f"Rate limit exceeded ({RATE_LIMIT_REQUESTS} requests per "
+            f"{RATE_LIMIT_WINDOW // 60} minutes). Cooldown: {RATE_LIMIT_COOLDOWN} seconds."
+        ),
+        0,
+        client_requests,
+    )
+
+
+def get_rate_limit_status(client_id: str = None) -> Tuple[bool, str, int]:
+    """Read-only rate-limit check for UI. Never consumes a slot."""
+    if client_id is None:
+        client_id = get_client_id()
+    allowed, message, remaining, _ = _prune_rate_limit_window(client_id)
+    return allowed, message, remaining
+
+
+def consume_rate_limit(client_id: str = None) -> Tuple[bool, str, int]:
+    """Consume one rate-limit slot when real work starts (detection / video)."""
+    if client_id is None:
+        client_id = get_client_id()
+
+    allowed, message, remaining, client_requests = _prune_rate_limit_window(client_id)
+    if not allowed:
+        # Full window (not already in cooldown) → start cooldown
+        if client_id not in _rate_limiter_blocked and len(client_requests) >= RATE_LIMIT_REQUESTS:
+            _rate_limiter_blocked[client_id] = time.time() + RATE_LIMIT_COOLDOWN
+            logging.warning(f"Rate limit exceeded for client {client_id}")
+            message = (
+                f"Rate limit exceeded ({RATE_LIMIT_REQUESTS} requests per "
+                f"{RATE_LIMIT_WINDOW // 60} minutes). Cooldown: {RATE_LIMIT_COOLDOWN} seconds."
+            )
+        return False, message, 0
+
+    client_requests.append(time.time())
+    remaining = RATE_LIMIT_REQUESTS - len(client_requests)
+    return True, f"Request allowed. {remaining} requests remaining.", remaining
+
+
+def check_rate_limit(client_id: str = None) -> Tuple[bool, str, int]:
+    """Alias for consume_rate_limit (backwards compatibility)."""
+    return consume_rate_limit(client_id)
 
 def reset_rate_limit(client_id: str = None) -> None:
     """Resets rate limit for a client (admin function)."""
