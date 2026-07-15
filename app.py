@@ -47,7 +47,8 @@ def apply_hangar_theme() -> None:
     """Inject Hangar Briefing Console CSS once per run (lean, no external fonts)."""
     css_path = ASSETS_DIR / "hangar_theme.css"
     if css_path.exists():
-        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+        # st.html keeps <style> intact; st.markdown can leak CSS as visible text.
+        st.html(f"<style>{css_path.read_text(encoding='utf-8')}</style>")
 
 apply_hangar_theme()
 
@@ -84,8 +85,7 @@ with st.spinner("Loading detection model…"):
     model = load_model(MODEL_PATH)
 
 # --- SIDEBAR ---
-st.sidebar.markdown('<p class="hangar-kicker">Control panel</p>', unsafe_allow_html=True)
-st.sidebar.header("Detection")
+st.sidebar.markdown('<p class="hangar-side-label">Detection</p>', unsafe_allow_html=True)
 app_mode = st.sidebar.radio(
     "Input mode",
     ["Images", "Video"],
@@ -112,8 +112,8 @@ st.sidebar.markdown('<hr class="hangar-divider">', unsafe_allow_html=True)
 
 # --- CONTEXTUAL SIDEBAR EXAMPLES ---
 if app_mode == "Images":
-    st.sidebar.subheader("Examples")
-    st.sidebar.caption("Run a sample to see detections immediately.")
+    st.sidebar.markdown('<p class="hangar-side-label">Examples</p>', unsafe_allow_html=True)
+    st.sidebar.caption("One click runs a sample detection.")
     example_image_paths = [ASSETS_DIR / f for f in EXAMPLE_IMAGE_FILES if (ASSETS_DIR / f).exists()]
     for image_path in example_image_paths:
         with st.sidebar.container(border=True):
@@ -134,8 +134,8 @@ if app_mode == "Images":
                 except (ValueError, OSError) as e:
                     st.error(f"Failed to process example: {e}")
 elif app_mode == "Video":
-    st.sidebar.subheader("Example")
-    st.sidebar.caption("Load the sample clip, then process it in the main view.")
+    st.sidebar.markdown('<p class="hangar-side-label">Example</p>', unsafe_allow_html=True)
+    st.sidebar.caption("Load sample, then process in main view.")
     example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
     if example_video_path.exists():
         with st.sidebar.container(border=True):
@@ -192,86 +192,113 @@ Tune confidence and IoU, run examples or your own media, export annotated result
     )
 
 # --- MAIN INTERFACE ---
-st.markdown('<p class="hangar-kicker">Mission brief</p>', unsafe_allow_html=True)
-st.title("Aircraft Detection")
-st.markdown(
-    '<p class="hangar-brief">Upload imagery or load a sidebar example. Annotated detections and timing readouts appear below.</p>',
-    unsafe_allow_html=True,
+_has_payload = bool(st.session_state.processed_images) or bool(
+    st.session_state.processed_video_bytes
 )
+if _has_payload:
+    st.html(
+        """
+        <div class="hangar-masthead">
+          <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
+          <h1>Aircraft Detection</h1>
+        </div>
+        """
+    )
+else:
+    st.html(
+        """
+        <div class="hangar-masthead">
+          <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
+          <h1>Aircraft Detection</h1>
+          <p class="hangar-brief">Upload media or run a sidebar example. Annotated boxes and inference timing land below.</p>
+        </div>
+        """
+    )
 
 if not is_healthy and health_issues:
     with st.expander("System issues", expanded=True):
         for issue in health_issues:
             st.warning(issue)
 
-st.markdown('<hr class="hangar-divider">', unsafe_allow_html=True)
+st.html('<hr class="hangar-divider">')
 
-if app_mode == "Images":
-    st.header("Image processing")
+def _render_image_uploader(key: str = "image_uploader") -> bool:
+    """Upload + validate + run detection for still images. Returns True if files are staged."""
     uploaded_files = st.file_uploader(
-        "Upload images",
+        "Drop images here",
         label_visibility="collapsed",
         type=["jpg", "jpeg", "png", "bmp", "tiff", "webp"],
         accept_multiple_files=True,
+        key=key,
     )
-    if uploaded_files:
-        valid_files = []
-        for file in uploaded_files:
-            file_bytes = file.getvalue()
-            is_valid, result = validate_file_upload(file_bytes, file.name, "image")
+    if not uploaded_files:
+        return False
 
-            if not is_valid:
-                st.error(f"{file.name}: {result}")
-                continue
+    valid_files = []
+    for file in uploaded_files:
+        file_bytes = file.getvalue()
+        is_valid, result = validate_file_upload(file_bytes, file.name, "image")
 
-            sanitized_name = result
-            file.name = sanitized_name
-            valid_files.append(file)
+        if not is_valid:
+            st.error(f"{file.name}: {result}")
+            continue
 
-            file_hash = generate_file_hash(file_bytes)
-            logging.info(f"Validated file: {sanitized_name} (hash: {file_hash[:16]}...)")
+        sanitized_name = result
+        file.name = sanitized_name
+        valid_files.append(file)
 
-        if valid_files:
-            st.caption(f"{len(valid_files)} of {len(uploaded_files)} files validated")
+        file_hash = generate_file_hash(file_bytes)
+        logging.info(f"Validated file: {sanitized_name} (hash: {file_hash[:16]}...)")
 
-            rate_allowed, rate_message, remaining = check_rate_limit()
+    if not valid_files:
+        st.warning("No valid image files to process.")
+        return True
 
-            if not rate_allowed:
-                st.error(rate_message)
-                st.caption("Rate limiting protects shared Cloud capacity.")
-            else:
-                st.caption(rate_message)
+    st.caption(f"{len(valid_files)} of {len(uploaded_files)} files validated")
 
-            if st.button(
-                "Process images",
-                type="primary",
-                width="stretch",
-                disabled=not rate_allowed,
-            ):
-                files_to_process = [f for f in valid_files if f.name not in st.session_state.processed_images]
-                if files_to_process:
-                    with st.spinner(f"Analyzing {len(files_to_process)} images…"):
-                        for file in files_to_process:
-                            try:
-                                orig_img = Image.open(file).convert("RGB")
-                                proc_img, count, speed = process_image(
-                                    model, orig_img, confidence_threshold, iou_threshold
-                                )
-                                st.session_state.processed_images[file.name] = {
-                                    "original": orig_img,
-                                    "processed": proc_img,
-                                    "detection_count": count,
-                                    "metrics": speed,
-                                }
-                            except (ValueError, OSError) as e:
-                                st.error(f"Failed to process {file.name}: {e}")
-                                continue
-                    st.rerun()
-        elif uploaded_files:
-            st.warning("No valid image files to process.")
+    rate_allowed, rate_message, remaining = check_rate_limit()
 
-    if st.session_state.processed_images:
-        st.header("Detection results")
+    if not rate_allowed:
+        st.error(rate_message)
+        st.caption("Rate limiting protects shared Cloud capacity.")
+    else:
+        st.caption(rate_message)
+
+    if st.button(
+        "Run detection",
+        type="primary",
+        width="stretch",
+        disabled=not rate_allowed,
+        key=f"run_detection_{key}",
+    ):
+        files_to_process = [f for f in valid_files if f.name not in st.session_state.processed_images]
+        if files_to_process:
+            with st.spinner(f"Analyzing {len(files_to_process)} images…"):
+                for file in files_to_process:
+                    try:
+                        orig_img = Image.open(file).convert("RGB")
+                        proc_img, count, speed = process_image(
+                            model, orig_img, confidence_threshold, iou_threshold
+                        )
+                        st.session_state.processed_images[file.name] = {
+                            "original": orig_img,
+                            "processed": proc_img,
+                            "detection_count": count,
+                            "metrics": speed,
+                        }
+                    except (ValueError, OSError) as e:
+                        st.error(f"Failed to process {file.name}: {e}")
+                        continue
+            st.rerun()
+    return True
+
+
+if app_mode == "Images":
+    has_results = bool(st.session_state.processed_images)
+
+    # Results lead when present — detections are the product.
+    if has_results:
+        st.header("Results")
         total_detections = sum(
             data["detection_count"] for data in st.session_state.processed_images.values()
         )
@@ -283,11 +310,26 @@ if app_mode == "Images":
             if st.session_state.processed_images
             else 0
         )
+        image_count = len(st.session_state.processed_images)
 
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Images", len(st.session_state.processed_images))
-        m2.metric("Aircraft detected", f"{total_detections}")
-        m3.metric("Avg inference", f"{avg_inference_time:.1f} ms")
+        st.html(
+            f"""
+            <div class="hangar-readouts">
+              <div class="hangar-readout">
+                <span class="label">Images</span>
+                <span class="value">{image_count}</span>
+              </div>
+              <div class="hangar-readout">
+                <span class="label">Aircraft</span>
+                <span class="value">{total_detections}</span>
+              </div>
+              <div class="hangar-readout">
+                <span class="label">Avg inference</span>
+                <span class="value">{avg_inference_time:.1f}<span class="unit">ms</span></span>
+              </div>
+            </div>
+            """
+        )
 
         if total_detections == 0:
             st.warning("No aircraft detected. Lower confidence in the sidebar and re-run.")
@@ -311,21 +353,30 @@ if app_mode == "Images":
             horizontal=True,
             label_visibility="collapsed",
         )
-        st.markdown('<hr class="hangar-divider">', unsafe_allow_html=True)
+        st.html('<div class="hangar-toolbar-gap"></div>')
         if view_mode == "Side-by-side":
             for filename, data in reversed(list(st.session_state.processed_images.items())):
-                st.markdown(f"#### {filename} · {data['detection_count']} detections")
+                det = data["detection_count"]
+                det_label = "detection" if det == 1 else "detections"
+                st.html(
+                    f"""
+                    <div class="hangar-result-meta">
+                      <span class="name">{filename}</span>
+                      <span class="count">{det} {det_label}</span>
+                    </div>
+                    """
+                )
                 c1, c2 = st.columns(2)
                 c1.image(data["original"], "Original", width="stretch")
                 c2.image(data["processed"], "Detected", width="stretch")
                 st.download_button(
-                    "Download image",
+                    "Download annotated",
                     image_to_bytes(data["processed"]),
                     f"detected_{filename}.png",
                     "image/png",
                     key=f"dl_{filename}",
                 )
-                st.markdown('<hr class="hangar-divider">', unsafe_allow_html=True)
+                st.html('<hr class="hangar-divider">')
         else:
             cols = st.columns(3)
             for idx, (filename, data) in enumerate(
@@ -334,29 +385,52 @@ if app_mode == "Images":
                 with cols[idx % 3]:
                     st.image(
                         data["processed"],
-                        f"{filename} ({data['detection_count']})",
+                        f"{filename} · {data['detection_count']}",
                         width="stretch",
                     )
-    elif not uploaded_files:
-        st.markdown(
-            """
-            <div class="hangar-empty">
-              <strong>No imagery loaded</strong>
-              <p>Upload images above, or run an example from the sidebar to complete a detection in under a minute.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+
+        with st.expander("Add more imagery", expanded=False):
+            _render_image_uploader(key="image_uploader_more")
+    else:
+        st.header("Imagery")
+        has_upload = _render_image_uploader(key="image_uploader")
+        if not has_upload:
+            st.html(
+                """
+                <div class="hangar-empty">
+                  <strong>No imagery loaded</strong>
+                  <p>Drop images above, or run a sidebar example to finish a detection in under a minute.</p>
+                  <p class="hangar-empty-hint">Next: <em>Run example</em> in the sidebar, or upload and hit <em>Run detection</em>.</p>
+                </div>
+                """
+            )
 
 elif app_mode == "Video":
-    st.header("Video analysis")
+    st.header("Video")
 
     if st.session_state.processed_video_bytes:
         st.subheader("Processed output")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Duration", f"{st.session_state.video_metrics.get('duration', 0):.1f}s")
-        m2.metric("Detections (all frames)", f"{st.session_state.video_metrics.get('total_detections', 0)}")
-        m3.metric("Processing FPS", f"{st.session_state.video_metrics.get('fps', 0):.1f}")
+        duration = st.session_state.video_metrics.get("duration", 0)
+        total_det = st.session_state.video_metrics.get("total_detections", 0)
+        proc_fps = st.session_state.video_metrics.get("fps", 0)
+        st.html(
+            f"""
+            <div class="hangar-readouts">
+              <div class="hangar-readout">
+                <span class="label">Duration</span>
+                <span class="value">{duration:.1f}<span class="unit">s</span></span>
+              </div>
+              <div class="hangar-readout">
+                <span class="label">Detections</span>
+                <span class="value">{total_det}</span>
+              </div>
+              <div class="hangar-readout">
+                <span class="label">Process rate</span>
+                <span class="value">{proc_fps:.1f}<span class="unit">fps</span></span>
+              </div>
+            </div>
+            """
+        )
         st.video(st.session_state.processed_video_bytes, format="video/mp4", start_time=0)
         st.download_button(
             "Download processed video",
@@ -375,10 +449,24 @@ elif app_mode == "Video":
     elif st.session_state.uploaded_video_bytes:
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader(f"Source · {st.session_state.original_video_name}")
+            st.html(
+                f"""
+                <div class="hangar-result-meta">
+                  <span class="name">{st.session_state.original_video_name}</span>
+                  <span class="count">Source</span>
+                </div>
+                """
+            )
             st.video(st.session_state.uploaded_video_bytes)
         with col2:
-            st.subheader("Live preview")
+            st.html(
+                """
+                <div class="hangar-result-meta">
+                  <span class="name">Live preview</span>
+                  <span class="count">During run</span>
+                </div>
+                """
+            )
             preview_container = st.empty()
 
         rate_allowed, rate_message, remaining = check_rate_limit()
@@ -389,7 +477,7 @@ elif app_mode == "Video":
         else:
             st.caption(rate_message)
 
-        if st.button("Process video", type="primary", width="stretch", disabled=not rate_allowed):
+        if st.button("Run detection", type="primary", width="stretch", disabled=not rate_allowed):
             video_info = get_video_info(st.session_state.uploaded_video_bytes)
 
             if "error" in video_info:
@@ -622,12 +710,12 @@ elif app_mode == "Video":
                     st.session_state.video_metrics = {}
                     st.rerun()
         else:
-            st.markdown(
+            st.html(
                 """
                 <div class="hangar-empty">
                   <strong>No video loaded</strong>
-                  <p>Upload a short clip (≤30s) or load the sidebar example, then run Process video.</p>
+                  <p>Upload a short clip (≤30s) or load the sidebar example, then run detection.</p>
+                  <p class="hangar-empty-hint">Next: <em>Load example</em> in the sidebar, or upload and hit <em>Run detection</em>.</p>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                """
             )

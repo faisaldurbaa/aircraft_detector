@@ -1,8 +1,9 @@
-/* Hangar Briefing Console — lean Streamlit overrides (Cloud free-tier safe) */
+/* Hangar Briefing Console — Streamlit Cloud–lean overrides */
 :root {
   --hangar-ink: #0c0e11;
   --panel-steel: #15191e;
   --instrument-gray: #2c333c;
+  --instrument-raised: #1c2229;
   --briefing-white: #e6e8eb;
   --muted-scope: #a0a8b0;
   --tactical-amber: #c9942a;
@@ -16,70 +17,310 @@
   --radius-md: 6px;
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --dur: 160ms;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
 }
 
-html, body, [data-testid="stAppViewContainer"], .stApp {
+html,
+body,
+[data-testid="stAppViewContainer"],
+.stApp {
   font-family: var(--font-sans) !important;
   background-color: var(--hangar-ink) !important;
   color: var(--briefing-white);
 }
 
-/* Sidebar as panel steel */
+/* Main stage: give detections room; tighten default Streamlit sprawl */
+.main .block-container {
+  padding-top: 1.75rem !important;
+  padding-bottom: 3rem !important;
+  max-width: 72rem !important;
+}
+
+/* ——— Sidebar: control surface ——— */
 [data-testid="stSidebar"] {
   background-color: var(--panel-steel) !important;
   border-right: 1px solid var(--instrument-gray);
 }
 
-[data-testid="stSidebar"] * {
+[data-testid="stSidebar"] > div:first-child {
+  padding-top: 1.25rem;
+}
+
+/* Do not set font-family on sidebar * — it overrides Material icon fonts
+   and renders expander/collapse arrows as literal names (e.g. keyboard_double_arrow_left). */
+
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+  font-family: var(--font-sans) !important;
+  font-size: 0.95rem !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+  margin-bottom: 0.35rem !important;
+  color: var(--briefing-white) !important;
+}
+
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"],
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
   font-family: var(--font-sans) !important;
 }
 
-/* Typography hierarchy */
+[data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+[data-testid="stSidebar"] .stCaption {
+  color: var(--muted-scope) !important;
+  font-size: 0.8rem !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {
+  background: var(--instrument-raised) !important;
+  border: 1px solid var(--instrument-gray) !important;
+  border-radius: var(--radius-md) !important;
+  padding: 0.35rem !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] {
+  background: transparent !important;
+  border: 1px solid var(--instrument-gray) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+/* Keep Streamlit Material icon ligatures intact (collapse / expander chevrons) */
+[data-testid="stSidebar"] [data-testid="stIconMaterial"] {
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  font-weight: normal !important;
+  line-height: 1 !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+  align-items: center !important;
+  gap: 0.35rem !important;
+  padding: 0.55rem 0.75rem !important;
+}
+
+[data-testid="stSidebar"] [data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] p {
+  margin: 0 !important;
+  line-height: 1.3 !important;
+}
+
+/* Fullscreen controls on tiny example thumbs are noise */
+[data-testid="stSidebar"] [data-testid="stElementToolbar"] {
+  display: none !important;
+}
+
+.hangar-side-label {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-scope);
+  margin: 0 0 0.65rem 0;
+}
+
+/* ——— Typography ——— */
 h1, h2, h3, h4 {
   font-family: var(--font-sans) !important;
   letter-spacing: -0.02em;
   font-weight: 600 !important;
   color: var(--briefing-white) !important;
+  text-wrap: balance;
 }
 
 h1 {
-  font-size: 1.75rem !important;
-  line-height: 1.2 !important;
-  margin-bottom: 0.25rem !important;
+  font-size: 1.85rem !important;
+  line-height: 1.15 !important;
+  margin: 0 0 0.35rem 0 !important;
+  font-weight: 700 !important;
 }
 
 h2 {
-  font-size: 1.25rem !important;
+  font-size: 1.15rem !important;
   line-height: 1.3 !important;
+  letter-spacing: -0.015em !important;
+  margin-top: 0.25rem !important;
 }
 
 h3, h4 {
-  font-size: 1.05rem !important;
+  font-size: 1rem !important;
+  line-height: 1.35 !important;
 }
 
-p, label, .stMarkdown, .stCaption {
+p, label, .stMarkdown {
   color: var(--briefing-white);
 }
 
-.stCaption, [data-testid="stCaptionContainer"] {
+.stCaption,
+[data-testid="stCaptionContainer"] {
   color: var(--muted-scope) !important;
 }
 
-/* Metric readouts in mono */
+/* ——— Masthead ——— */
+.hangar-masthead {
+  margin: 0 0 1rem 0;
+  max-width: 48rem;
+}
+
+.hangar-kicker {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tactical-amber);
+  margin: 0 0 0.4rem 0;
+}
+
+.hangar-brief {
+  color: var(--muted-scope);
+  font-size: 0.95rem;
+  max-width: 58ch;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.hangar-divider {
+  border: none;
+  border-top: 1px solid var(--instrument-gray);
+  margin: 1rem 0 1.15rem 0;
+}
+
+/* ——— Empty / idle state ——— */
+.hangar-empty {
+  border: 1px solid var(--instrument-gray);
+  border-radius: var(--radius-md);
+  padding: 1.75rem 1.5rem;
+  background: var(--panel-steel);
+  max-width: 36rem;
+  margin-top: 0.5rem;
+}
+
+.hangar-empty strong {
+  color: var(--briefing-white);
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin-bottom: 0.4rem;
+}
+
+.hangar-empty p {
+  color: var(--muted-scope);
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  max-width: 42ch;
+}
+
+.hangar-empty .hangar-empty-hint {
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--instrument-gray);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--muted-scope);
+}
+
+.hangar-empty .hangar-empty-hint em {
+  font-style: normal;
+  color: var(--tactical-amber);
+}
+
+/* ——— Instrument readout strip ——— */
+.hangar-readouts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0 0 1.1rem 0;
+}
+
+.hangar-readout {
+  background: var(--panel-steel);
+  border: 1px solid var(--instrument-gray);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.85rem 0.7rem;
+  min-width: 0;
+}
+
+.hangar-readout .label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-scope);
+  margin-bottom: 0.25rem;
+}
+
+.hangar-readout .value {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 1.4rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--briefing-white);
+  line-height: 1.1;
+}
+
+.hangar-readout .unit {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted-scope);
+  letter-spacing: 0;
+  margin-left: 0.2rem;
+}
+
+.hangar-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.85rem;
+  margin: 0 0 0.65rem 0;
+}
+
+.hangar-result-meta .name {
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--briefing-white);
+}
+
+.hangar-result-meta .count {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tactical-amber);
+}
+
+/* Native Streamlit metrics — keep readable if used in expanders */
 [data-testid="stMetricValue"] {
   font-family: var(--font-mono) !important;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  font-size: 1.35rem !important;
 }
 
 [data-testid="stMetricLabel"] {
   color: var(--muted-scope) !important;
   text-transform: uppercase;
-  font-size: 0.7rem !important;
-  letter-spacing: 0.06em !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.65rem !important;
+  letter-spacing: 0.08em !important;
 }
 
-/* Primary CTA — scarce amber */
+[data-testid="stMetric"] {
+  background: transparent;
+  padding: 0.25rem 0;
+}
+
+/* ——— Buttons ——— */
 .stButton > button[kind="primary"],
 .stButton > button[data-testid="baseButton-primary"],
 button[kind="primary"] {
@@ -89,7 +330,10 @@ button[kind="primary"] {
   border-radius: var(--radius-sm) !important;
   font-weight: 600 !important;
   letter-spacing: 0.02em;
-  transition: background-color var(--dur) var(--ease-out), border-color var(--dur) var(--ease-out);
+  min-height: 2.5rem;
+  transition:
+    background-color var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out);
 }
 
 .stButton > button[kind="primary"]:hover,
@@ -99,43 +343,89 @@ button[kind="primary"]:hover {
   color: var(--hangar-ink) !important;
 }
 
-/* Secondary buttons — quiet steel */
+.stButton > button[kind="primary"]:disabled,
+button[kind="primary"]:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+}
+
 .stButton > button:not([kind="primary"]),
 .stDownloadButton > button {
   background-color: transparent !important;
   color: var(--briefing-white) !important;
   border: 1px solid var(--instrument-gray) !important;
   border-radius: var(--radius-sm) !important;
-  transition: border-color var(--dur) var(--ease-out), background-color var(--dur) var(--ease-out);
+  min-height: 2.5rem;
+  font-weight: 500 !important;
+  transition:
+    border-color var(--dur) var(--ease-out),
+    background-color var(--dur) var(--ease-out);
 }
 
 .stButton > button:not([kind="primary"]):hover,
 .stDownloadButton > button:hover {
   border-color: var(--muted-scope) !important;
-  background-color: rgba(255, 255, 255, 0.03) !important;
+  background-color: rgba(230, 232, 235, 0.04) !important;
 }
 
-/* Focus — visible, no glow bloom */
 .stButton > button:focus-visible,
 .stDownloadButton > button:focus-visible,
-[data-baseweb="slider"] *:focus-visible {
+[data-baseweb="slider"] *:focus-visible,
+[data-baseweb="radio"] *:focus-visible {
   outline: 2px solid var(--tactical-amber) !important;
   outline-offset: 2px !important;
+  box-shadow: none !important;
 }
 
-/* Sliders — amber track accent only on active */
+/* ——— Sliders ——— */
 [data-testid="stSlider"] [role="slider"] {
   background-color: var(--tactical-amber) !important;
+  box-shadow: none !important;
 }
 
-/* File uploader — instrument frame */
+[data-testid="stSlider"] [data-testid="stTickBarMin"],
+[data-testid="stSlider"] [data-testid="stTickBarMax"] {
+  color: var(--muted-scope) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 0.7rem !important;
+}
+
+/* ——— File uploader: primary work surface ——— */
 [data-testid="stFileUploader"] section {
   border: 1px dashed var(--instrument-gray) !important;
   border-radius: var(--radius-md) !important;
-  background-color: rgba(21, 25, 30, 0.6) !important;
+  background-color: var(--panel-steel) !important;
+  padding: 1.25rem 1rem !important;
+  transition:
+    border-color var(--dur) var(--ease-out),
+    background-color var(--dur) var(--ease-out);
 }
 
-/* Expanders / containers — hairline, no float shadow */
+[data-testid="stFileUploader"]:hover section {
+  border-color: var(--muted-scope) !important;
+  background-color: var(--instrument-raised) !important;
+}
+
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] span,
+[data-testid="stFileUploader"] small {
+  color: var(--muted-scope) !important;
+}
+
+[data-testid="stFileUploader"] button {
+  border-radius: var(--radius-sm) !important;
+  border-color: var(--instrument-gray) !important;
+  color: var(--briefing-white) !important;
+  background: transparent !important;
+}
+
+/* ——— Radios / segment controls ——— */
+[data-testid="stSidebar"] [role="radiogroup"] label,
+div[role="radiogroup"] label {
+  border-radius: var(--radius-sm) !important;
+}
+
+/* ——— Expanders / bordered blocks ——— */
 [data-testid="stExpander"],
 [data-testid="stVerticalBlockBorderWrapper"] {
   border-color: var(--instrument-gray) !important;
@@ -143,66 +433,76 @@ button[kind="primary"]:hover {
   box-shadow: none !important;
 }
 
-/* Status messages — desaturated instrument states */
+/* ——— Alerts ——— */
 [data-testid="stAlert"] {
   border-radius: var(--radius-sm) !important;
   border-width: 1px !important;
+  box-shadow: none !important;
 }
 
-/* Mission brief lead-in */
-.hangar-brief {
-  color: var(--muted-scope);
-  font-size: 0.95rem;
-  max-width: 62ch;
-  margin: 0 0 1.25rem 0;
-  line-height: 1.5;
+/* ——— Progress ——— */
+.stProgress > div > div > div > div {
+  background-color: var(--tactical-amber) !important;
 }
 
-.hangar-kicker {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--tactical-amber);
-  margin: 0 0 0.35rem 0;
+/* ——— Images as payload ——— */
+[data-testid="stImage"] {
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 
-.hangar-empty {
+[data-testid="stImage"] img {
   border: 1px solid var(--instrument-gray);
   border-radius: var(--radius-md);
-  padding: 1.5rem 1.25rem;
-  background: var(--panel-steel);
-  max-width: 40rem;
 }
 
-.hangar-empty strong {
-  color: var(--briefing-white);
-  display: block;
-  margin-bottom: 0.35rem;
+[data-testid="stImageCaption"] {
+  font-family: var(--font-mono) !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.04em !important;
+  color: var(--muted-scope) !important;
+  margin-top: 0.4rem !important;
 }
 
-.hangar-empty p {
-  color: var(--muted-scope);
-  margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.5;
+/* ——— Toolbar rhythm under results ——— */
+.hangar-toolbar-gap {
+  height: 0.35rem;
 }
 
-.hangar-divider {
-  border: none;
-  border-top: 1px solid var(--instrument-gray);
-  margin: 1.25rem 0;
-}
-
-/* Hide Streamlit chrome noise where possible */
+/* Hide Streamlit chrome noise */
 #MainMenu { visibility: hidden; }
 header[data-testid="stHeader"] {
   background: transparent !important;
 }
 footer { visibility: hidden; }
 
+/* Deploy button — mute portfolio-demo chrome */
+[data-testid="stToolbar"] {
+  opacity: 0.55;
+  transition: opacity var(--dur) var(--ease-out);
+}
+[data-testid="stToolbar"]:hover {
+  opacity: 1;
+}
+
+@media (max-width: 768px) {
+  .hangar-readouts {
+    grid-template-columns: 1fr;
+  }
+
+  h1 {
+    font-size: 1.65rem !important;
+  }
+
+  .main .block-container {
+    padding-top: 1.25rem !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }

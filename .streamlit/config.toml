@@ -7,3 +7,11 @@ folderWatchBlacklist = [
   "Model Training Files",
   "__pycache__",
 ]
+
+[theme]
+base = "dark"
+primaryColor = "#C9942A"
+backgroundColor = "#0C0E11"
+secondaryBackgroundColor = "#15191E"
+textColor = "#E6E8EB"
+font = "sans serif"
