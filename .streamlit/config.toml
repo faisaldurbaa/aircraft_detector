@@ -15,3 +15,22 @@ backgroundColor = "#0C0E11"
 secondaryBackgroundColor = "#15191E"
 textColor = "#E6E8EB"
 font = "sans serif"
+borderColor = "#2C333C"
+baseRadius = "small"
+buttonRadius = "small"
+showWidgetBorder = true
+showSidebarBorder = true
+linkColor = "#C9942A"
+codeTextColor = "#E6E8EB"
+codeBackgroundColor = "#1C2229"
+orangeColor = "#C9942A"
+greenColor = "#5A8F6B"
+redColor = "#C45C4A"
+grayColor = "#A0A8B0"
+
+[theme.sidebar]
+backgroundColor = "#15191E"
+secondaryBackgroundColor = "#1C2229"
+textColor = "#E6E8EB"
+borderColor = "#2C333C"
+primaryColor = "#C9942A"

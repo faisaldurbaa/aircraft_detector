@@ -38,17 +38,30 @@ FRAME_SKIP = 2
 # --- PAGE CONFIGURATION ---
 st.set_page_config(
     page_title="Aircraft Detection",
-    page_icon="✈",
+    page_icon=":material/flight:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-def apply_hangar_theme() -> None:
-    """Inject Hangar Briefing Console CSS once per run (lean, no external fonts)."""
+
+@st.cache_data
+def _load_hangar_css(mtime: float) -> str:
+    """Cache CSS text so Cloud free-tier skips full reads every rerun."""
     css_path = ASSETS_DIR / "hangar_theme.css"
     if css_path.exists():
+        return css_path.read_text(encoding="utf-8")
+    return ""
+
+
+def apply_hangar_theme() -> None:
+    """Inject Hangar Briefing Console CSS (lean, no external fonts)."""
+    css_path = ASSETS_DIR / "hangar_theme.css"
+    mtime = css_path.stat().st_mtime if css_path.exists() else 0.0
+    css = _load_hangar_css(mtime)
+    if css:
         # st.html keeps <style> intact; st.markdown can leak CSS as visible text.
-        st.html(f"<style>{css_path.read_text(encoding='utf-8')}</style>")
+        st.html(f"<style>{css}</style>")
+
 
 apply_hangar_theme()
 
@@ -79,6 +92,83 @@ if "video_upload_key" not in st.session_state:
     st.session_state.video_upload_key = 0
 if "original_video_name" not in st.session_state:
     st.session_state.original_video_name = ""
+if "_results_zip" not in st.session_state:
+    st.session_state._results_zip = None
+if "_zip_fingerprint" not in st.session_state:
+    st.session_state._zip_fingerprint = None
+if "_annotated_bytes" not in st.session_state:
+    st.session_state._annotated_bytes = {}
+
+
+def _clear_image_export_cache() -> None:
+    st.session_state._results_zip = None
+    st.session_state._zip_fingerprint = None
+    st.session_state._annotated_bytes = {}
+
+
+def _store_processed_image(
+    name: str,
+    original: Image.Image,
+    processed: Image.Image,
+    count: int,
+    metrics: dict,
+) -> None:
+    st.session_state.processed_images[name] = {
+        "original": original,
+        "processed": processed,
+        "detection_count": count,
+        "metrics": metrics,
+    }
+    st.session_state._annotated_bytes[name] = image_to_bytes(processed)
+    st.session_state._zip_fingerprint = None
+    st.session_state._results_zip = None
+
+
+def _ensure_results_zip() -> bytes:
+    """Build ZIP once per results set — not on every Streamlit rerun."""
+    fingerprint = tuple(
+        (name, data["detection_count"], id(data["processed"]))
+        for name, data in st.session_state.processed_images.items()
+    )
+    if st.session_state._zip_fingerprint != fingerprint or st.session_state._results_zip is None:
+        st.session_state._results_zip = create_zip(st.session_state.processed_images)
+        st.session_state._zip_fingerprint = fingerprint
+        for name, data in st.session_state.processed_images.items():
+            if name not in st.session_state._annotated_bytes:
+                st.session_state._annotated_bytes[name] = image_to_bytes(data["processed"])
+    return st.session_state._results_zip
+
+
+def _annotated_download_bytes(filename: str) -> bytes:
+    cached = st.session_state._annotated_bytes.get(filename)
+    if cached is not None:
+        return cached
+    data = st.session_state.processed_images[filename]
+    buf = image_to_bytes(data["processed"])
+    st.session_state._annotated_bytes[filename] = buf
+    return buf
+
+
+def _example_image_paths() -> list[Path]:
+    return [ASSETS_DIR / f for f in EXAMPLE_IMAGE_FILES if (ASSETS_DIR / f).exists()]
+
+
+def _run_sample_image(image_path: Path) -> None:
+    original_image = Image.open(image_path).convert("RGB")
+    proc_img, count, speed = process_image(
+        model, original_image, confidence_threshold, iou_threshold
+    )
+    _store_processed_image(image_path.name, original_image, proc_img, count, speed)
+
+
+def _load_sample_video() -> None:
+    example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
+    with open(example_video_path, "rb") as f:
+        st.session_state.uploaded_video_bytes = f.read()
+    st.session_state.original_video_name = EXAMPLE_VIDEO_FILE
+    st.session_state.processed_video_bytes = None
+    st.session_state.video_metrics = {}
+
 
 # --- MODEL LOADING ---
 with st.spinner("Loading detection model…"):
@@ -89,7 +179,7 @@ st.sidebar.markdown('<p class="hangar-side-label">Detection</p>', unsafe_allow_h
 app_mode = st.sidebar.radio(
     "Input mode",
     ["Images", "Video"],
-    help="Process still images or a single video file.",
+    help="Still images or a single video file.",
 )
 
 confidence_threshold = st.sidebar.slider(
@@ -98,54 +188,40 @@ confidence_threshold = st.sidebar.slider(
     1.0,
     0.25,
     0.05,
-    help="Minimum score to keep a detection. Higher is stricter.",
+    help="Minimum score to keep a box. Higher is stricter — fewer boxes.",
 )
 iou_threshold = st.sidebar.slider(
-    "IoU",
+    "Overlap (IoU)",
     0.0,
     1.0,
     0.45,
     0.05,
-    help="Overlap allowed between boxes. Lower reduces duplicates.",
+    help="How much boxes may overlap. Lower reduces duplicate boxes.",
 )
 st.sidebar.markdown('<hr class="hangar-divider">', unsafe_allow_html=True)
 
-# --- CONTEXTUAL SIDEBAR EXAMPLES ---
+# --- SIDEBAR EXAMPLES (primary place to pick mode samples) ---
 if app_mode == "Images":
     st.sidebar.markdown('<p class="hangar-side-label">Examples</p>', unsafe_allow_html=True)
     st.sidebar.caption("One click runs a sample detection.")
-    example_image_paths = [ASSETS_DIR / f for f in EXAMPLE_IMAGE_FILES if (ASSETS_DIR / f).exists()]
-    for image_path in example_image_paths:
+    for image_path in _example_image_paths():
         with st.sidebar.container(border=True):
             st.image(str(image_path), width="stretch")
             if st.button("Run example", key=f"try_{image_path.name}", width="stretch"):
                 try:
-                    original_image = Image.open(image_path).convert("RGB")
-                    proc_img, count, speed = process_image(
-                        model, original_image, confidence_threshold, iou_threshold
-                    )
-                    st.session_state.processed_images[image_path.name] = {
-                        "original": original_image,
-                        "processed": proc_img,
-                        "detection_count": count,
-                        "metrics": speed,
-                    }
+                    _run_sample_image(image_path)
                     st.rerun()
                 except (ValueError, OSError) as e:
                     st.error(f"Failed to process example: {e}")
 elif app_mode == "Video":
-    st.sidebar.markdown('<p class="hangar-side-label">Example</p>', unsafe_allow_html=True)
-    st.sidebar.caption("Load sample, then process in main view.")
+    st.sidebar.markdown('<p class="hangar-side-label">Examples</p>', unsafe_allow_html=True)
+    st.sidebar.caption("Load sample, then process in the main view.")
     example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
     if example_video_path.exists():
         with st.sidebar.container(border=True):
             st.video(str(example_video_path))
             if st.button("Load example", width="stretch", key="ex_video"):
-                with open(example_video_path, "rb") as f:
-                    st.session_state.uploaded_video_bytes = f.read()
-                st.session_state.original_video_name = EXAMPLE_VIDEO_FILE
-                st.session_state.processed_video_bytes = None
-                st.session_state.video_metrics = {}
+                _load_sample_video()
                 st.rerun()
 
 health = get_system_health()
@@ -182,9 +258,7 @@ with st.sidebar.expander("System status", expanded=False):
 with st.sidebar.expander("About"):
     st.markdown(
         """
-Fine-tuned YOLOv8 for military aircraft detection in images and video.
-
-Tune confidence and IoU, run examples or your own media, export annotated results.
+Fine-tuned YOLOv8 for military aircraft detection in images and video — upload media, tune thresholds, export annotated results.
 
 **Developer:** [Faisal Durbaa](https://github.com/faisaldurbaa)  
 **Repository:** [aircraft_detector](https://github.com/faisaldurbaa/aircraft_detector)
@@ -195,22 +269,27 @@ Tune confidence and IoU, run examples or your own media, export annotated result
 _has_payload = bool(st.session_state.processed_images) or bool(
     st.session_state.processed_video_bytes
 )
+_ready_class = "hangar-ready" if is_healthy else "hangar-ready is-err"
+_ready_label = "Model ready" if is_healthy else "Model degraded"
+
 if _has_payload:
     st.html(
-        """
+        f"""
         <div class="hangar-masthead">
           <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
           <h1>Aircraft Detection</h1>
+          <p class="{_ready_class}">{_ready_label}</p>
         </div>
         """
     )
 else:
     st.html(
-        """
+        f"""
         <div class="hangar-masthead">
           <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
           <h1>Aircraft Detection</h1>
           <p class="hangar-brief">Upload media or run a sidebar example. Annotated boxes and inference timing land below.</p>
+          <p class="{_ready_class}">{_ready_label}</p>
         </div>
         """
     )
@@ -221,6 +300,7 @@ if not is_healthy and health_issues:
             st.warning(issue)
 
 st.html('<hr class="hangar-divider">')
+
 
 def _render_image_uploader(key: str = "image_uploader") -> bool:
     """Upload + validate + run detection for still images. Returns True if files are staged."""
@@ -280,12 +360,7 @@ def _render_image_uploader(key: str = "image_uploader") -> bool:
                         proc_img, count, speed = process_image(
                             model, orig_img, confidence_threshold, iou_threshold
                         )
-                        st.session_state.processed_images[file.name] = {
-                            "original": orig_img,
-                            "processed": proc_img,
-                            "detection_count": count,
-                            "metrics": speed,
-                        }
+                        _store_processed_image(file.name, orig_img, proc_img, count, speed)
                     except (ValueError, OSError) as e:
                         st.error(f"Failed to process {file.name}: {e}")
                         continue
@@ -334,13 +409,15 @@ if app_mode == "Images":
         if total_detections == 0:
             st.warning("No aircraft detected. Lower confidence in the sidebar and re-run.")
 
+        zip_bytes = _ensure_results_zip()
         col1, col2, _ = st.columns([0.3, 0.3, 0.4])
         if col1.button("Clear results", width="stretch"):
             st.session_state.processed_images.clear()
+            _clear_image_export_cache()
             st.rerun()
         if col2.download_button(
             "Download ZIP",
-            create_zip(st.session_state.processed_images),
+            zip_bytes,
             "detected_images.zip",
             "application/zip",
             width="stretch",
@@ -371,7 +448,7 @@ if app_mode == "Images":
                 c2.image(data["processed"], "Detected", width="stretch")
                 st.download_button(
                     "Download annotated",
-                    image_to_bytes(data["processed"]),
+                    _annotated_download_bytes(filename),
                     f"detected_{filename}.png",
                     "image/png",
                     key=f"dl_{filename}",
@@ -389,27 +466,34 @@ if app_mode == "Images":
                         width="stretch",
                     )
 
-        with st.expander("Add more imagery", expanded=False):
+        with st.expander("Add more images", expanded=False):
             _render_image_uploader(key="image_uploader_more")
     else:
-        st.header("Imagery")
+        st.header("Images")
+        sample_paths = _example_image_paths()
         has_upload = _render_image_uploader(key="image_uploader")
         if not has_upload:
+            if sample_paths:
+                if st.button("Run sample", type="primary", width="stretch", key="main_run_sample"):
+                    try:
+                        with st.spinner("Running sample detection…"):
+                            _run_sample_image(sample_paths[0])
+                        st.rerun()
+                    except (ValueError, OSError) as e:
+                        st.error(f"Failed to process sample: {e}")
             st.html(
                 """
                 <div class="hangar-empty">
-                  <strong>No imagery loaded</strong>
-                  <p>Drop images above, or run a sidebar example to finish a detection in under a minute.</p>
-                  <p class="hangar-empty-hint">Next: <em>Run example</em> in the sidebar, or upload and hit <em>Run detection</em>.</p>
+                  <strong>No images loaded</strong>
+                  <p>Drop images above, or use Examples in the sidebar to finish a detection in under a minute.</p>
+                  <p class="hangar-empty-hint">Next: sidebar <em>Run example</em>, or upload and hit <em>Run detection</em>.</p>
                 </div>
                 """
             )
 
 elif app_mode == "Video":
-    st.header("Video")
-
     if st.session_state.processed_video_bytes:
-        st.subheader("Processed output")
+        st.header("Results")
         duration = st.session_state.video_metrics.get("duration", 0)
         total_det = st.session_state.video_metrics.get("total_detections", 0)
         proc_fps = st.session_state.video_metrics.get("fps", 0)
@@ -432,14 +516,15 @@ elif app_mode == "Video":
             """
         )
         st.video(st.session_state.processed_video_bytes, format="video/mp4", start_time=0)
-        st.download_button(
-            "Download processed video",
+        col1, col2, _ = st.columns([0.3, 0.3, 0.4])
+        col1.download_button(
+            "Download",
             st.session_state.processed_video_bytes,
             f"detected_{st.session_state.original_video_name}",
             "video/mp4",
             width="stretch",
         )
-        if st.button("Clear and start over", width="stretch", type="primary"):
+        if col2.button("Clear results", width="stretch"):
             st.session_state.uploaded_video_bytes = None
             st.session_state.processed_video_bytes = None
             st.session_state.video_metrics = {}
@@ -447,6 +532,7 @@ elif app_mode == "Video":
             st.rerun()
 
     elif st.session_state.uploaded_video_bytes:
+        st.header("Video")
         col1, col2 = st.columns(2)
         with col1:
             st.html(
@@ -678,6 +764,8 @@ elif app_mode == "Video":
                                     st.success(f"Video processed in {processing_duration:.2f}s")
                                     st.rerun()
     else:
+        st.header("Video")
+        example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
         uploaded_file = st.file_uploader(
             "Upload a video (max 30 seconds)",
             label_visibility="collapsed",
@@ -710,12 +798,16 @@ elif app_mode == "Video":
                     st.session_state.video_metrics = {}
                     st.rerun()
         else:
+            if example_video_path.exists():
+                if st.button("Load sample", type="primary", width="stretch", key="main_load_sample"):
+                    _load_sample_video()
+                    st.rerun()
             st.html(
                 """
                 <div class="hangar-empty">
                   <strong>No video loaded</strong>
-                  <p>Upload a short clip (≤30s) or load the sidebar example, then run detection.</p>
-                  <p class="hangar-empty-hint">Next: <em>Load example</em> in the sidebar, or upload and hit <em>Run detection</em>.</p>
+                  <p>Upload a short clip (≤30s), or use Examples in the sidebar, then run detection.</p>
+                  <p class="hangar-empty-hint">Next: sidebar <em>Load example</em>, or upload and hit <em>Run detection</em>.</p>
                 </div>
                 """
             )

@@ -1,4 +1,4 @@
-/* Hangar Briefing Console — Streamlit Cloud–lean overrides */
+/* Hangar Briefing Console — committed tactical, Streamlit Cloud–lean */
 :root {
   --hangar-ink: #0c0e11;
   --panel-steel: #15191e;
@@ -34,23 +34,26 @@ body,
 
 /* Main stage: give detections room; tighten default Streamlit sprawl */
 .main .block-container {
-  padding-top: 1.75rem !important;
+  padding-top: 1.5rem !important;
   padding-bottom: 3rem !important;
   max-width: 72rem !important;
 }
 
-/* ——— Sidebar: control surface ——— */
+/* ——— Sidebar: control strip ——— */
 [data-testid="stSidebar"] {
   background-color: var(--panel-steel) !important;
   border-right: 1px solid var(--instrument-gray);
+  visibility: visible !important;
 }
 
 [data-testid="stSidebar"] > div:first-child {
-  padding-top: 1.25rem;
+  padding-top: 1rem;
+  padding-left: 0.85rem;
+  padding-right: 0.85rem;
 }
 
 /* Do not set font-family on sidebar * — it overrides Material icon fonts
-   and renders expander/collapse arrows as literal names (e.g. keyboard_double_arrow_left). */
+   and renders expander/collapse arrows as literal names. */
 
 [data-testid="stSidebar"] h1,
 [data-testid="stSidebar"] h2,
@@ -74,14 +77,14 @@ body,
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
 [data-testid="stSidebar"] .stCaption {
   color: var(--muted-scope) !important;
-  font-size: 0.8rem !important;
+  font-size: 0.78rem !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {
   background: var(--instrument-raised) !important;
   border: 1px solid var(--instrument-gray) !important;
-  border-radius: var(--radius-md) !important;
-  padding: 0.35rem !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.3rem !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stExpander"] {
@@ -90,7 +93,6 @@ body,
   border-radius: var(--radius-sm) !important;
 }
 
-/* Keep Streamlit Material icon ligatures intact (collapse / expander chevrons) */
 [data-testid="stSidebar"] [data-testid="stIconMaterial"] {
   letter-spacing: normal !important;
   text-transform: none !important;
@@ -101,7 +103,7 @@ body,
 [data-testid="stSidebar"] [data-testid="stExpander"] summary {
   align-items: center !important;
   gap: 0.35rem !important;
-  padding: 0.55rem 0.75rem !important;
+  padding: 0.5rem 0.65rem !important;
 }
 
 [data-testid="stSidebar"] [data-testid="stExpander"] summary [data-testid="stMarkdownContainer"] p {
@@ -109,18 +111,19 @@ body,
   line-height: 1.3 !important;
 }
 
-/* Fullscreen controls on tiny example thumbs are noise */
 [data-testid="stSidebar"] [data-testid="stElementToolbar"] {
   display: none !important;
 }
 
+/* Quiet sans chrome labels — not mono-uppercase kickers */
 .hangar-side-label {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
   color: var(--muted-scope);
-  margin: 0 0 0.65rem 0;
+  margin: 0 0 0.5rem 0;
 }
 
 /* ——— Typography ——— */
@@ -135,7 +138,7 @@ h1, h2, h3, h4 {
 h1 {
   font-size: 1.85rem !important;
   line-height: 1.15 !important;
-  margin: 0 0 0.35rem 0 !important;
+  margin: 0 0 0.2rem 0 !important;
   font-weight: 700 !important;
 }
 
@@ -160,19 +163,28 @@ p, label, .stMarkdown {
   color: var(--muted-scope) !important;
 }
 
-/* ——— Masthead ——— */
+/* ——— Masthead + ready rail ——— */
 .hangar-masthead {
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.75rem 0;
   max-width: 48rem;
 }
 
 .hangar-kicker {
   font-family: var(--font-mono);
   font-size: 0.68rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--tactical-amber);
-  margin: 0 0 0.4rem 0;
+  margin: 0 0 0.35rem 0;
+}
+
+.hangar-product {
+  margin: 0 0 0.45rem 0;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--muted-scope);
 }
 
 .hangar-brief {
@@ -183,20 +195,53 @@ p, label, .stMarkdown {
   line-height: 1.55;
 }
 
+.hangar-ready {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.65rem 0 0 0;
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--instrument-gray);
+  border-radius: var(--radius-sm);
+  background: var(--instrument-raised);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--briefing-white);
+}
+
+.hangar-ready::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--status-ok);
+  flex-shrink: 0;
+}
+
+.hangar-ready.is-warn::before {
+  background: var(--status-warn);
+}
+
+.hangar-ready.is-err::before {
+  background: var(--status-err);
+}
+
 .hangar-divider {
   border: none;
   border-top: 1px solid var(--instrument-gray);
-  margin: 1rem 0 1.15rem 0;
+  margin: 0.85rem 0 1.05rem 0;
 }
 
-/* ——— Empty / idle state ——— */
+/* Payload framing comes from uploader + empty/readout borders — no fake HTML wrappers */
+
 .hangar-empty {
   border: 1px solid var(--instrument-gray);
   border-radius: var(--radius-md);
-  padding: 1.75rem 1.5rem;
-  background: var(--panel-steel);
+  padding: 1.35rem 1.25rem;
+  background: var(--instrument-raised);
   max-width: 36rem;
-  margin-top: 0.5rem;
+  margin-top: 0.35rem;
 }
 
 .hangar-empty strong {
@@ -205,7 +250,7 @@ p, label, .stMarkdown {
   font-size: 1.05rem;
   font-weight: 600;
   letter-spacing: -0.015em;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.35rem;
 }
 
 .hangar-empty p {
@@ -217,50 +262,52 @@ p, label, .stMarkdown {
 }
 
 .hangar-empty .hangar-empty-hint {
-  margin-top: 0.85rem;
-  padding-top: 0.85rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
   border-top: 1px solid var(--instrument-gray);
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  letter-spacing: 0;
   color: var(--muted-scope);
 }
 
 .hangar-empty .hangar-empty-hint em {
   font-style: normal;
-  color: var(--tactical-amber);
+  font-weight: 600;
+  color: var(--briefing-white);
 }
 
 /* ——— Instrument readout strip ——— */
 .hangar-readouts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.65rem;
-  margin: 0 0 1.1rem 0;
+  gap: 0.55rem;
+  margin: 0 0 1rem 0;
 }
 
 .hangar-readout {
-  background: var(--panel-steel);
+  background: var(--instrument-raised);
   border: 1px solid var(--instrument-gray);
-  border-radius: var(--radius-md);
-  padding: 0.65rem 0.85rem 0.7rem;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem 0.65rem;
   min-width: 0;
 }
 
 .hangar-readout .label {
   display: block;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
   color: var(--muted-scope);
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.2rem;
 }
 
 .hangar-readout .value {
   display: block;
   font-family: var(--font-mono);
-  font-size: 1.4rem;
+  font-size: 1.35rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
@@ -294,25 +341,26 @@ p, label, .stMarkdown {
 .hangar-result-meta .count {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-transform: none;
   color: var(--tactical-amber);
 }
 
-/* Native Streamlit metrics — keep readable if used in expanders */
+/* Native Streamlit metrics — values mono; labels quiet sans */
 [data-testid="stMetricValue"] {
   font-family: var(--font-mono) !important;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  font-size: 1.35rem !important;
+  font-size: 1.25rem !important;
 }
 
 [data-testid="stMetricLabel"] {
   color: var(--muted-scope) !important;
-  text-transform: uppercase;
-  font-family: var(--font-mono) !important;
-  font-size: 0.65rem !important;
-  letter-spacing: 0.08em !important;
+  text-transform: none !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.72rem !important;
+  letter-spacing: 0.01em !important;
+  font-weight: 500 !important;
 }
 
 [data-testid="stMetric"] {
@@ -329,7 +377,7 @@ button[kind="primary"] {
   border: 1px solid var(--tactical-amber) !important;
   border-radius: var(--radius-sm) !important;
   font-weight: 600 !important;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.01em;
   min-height: 2.5rem;
   transition:
     background-color var(--dur) var(--ease-out),
@@ -390,12 +438,12 @@ button[kind="primary"]:disabled {
   font-size: 0.7rem !important;
 }
 
-/* ——— File uploader: primary work surface ——— */
+/* ——— File uploader: framed ingress ——— */
 [data-testid="stFileUploader"] section {
   border: 1px dashed var(--instrument-gray) !important;
-  border-radius: var(--radius-md) !important;
-  background-color: var(--panel-steel) !important;
-  padding: 1.25rem 1rem !important;
+  border-radius: var(--radius-sm) !important;
+  background-color: var(--instrument-raised) !important;
+  padding: 1.15rem 1rem !important;
   transition:
     border-color var(--dur) var(--ease-out),
     background-color var(--dur) var(--ease-out);
@@ -403,7 +451,7 @@ button[kind="primary"]:disabled {
 
 [data-testid="stFileUploader"]:hover section {
   border-color: var(--muted-scope) !important;
-  background-color: var(--instrument-raised) !important;
+  background-color: var(--panel-steel) !important;
 }
 
 [data-testid="stFileUploader"] label,
@@ -429,7 +477,7 @@ div[role="radiogroup"] label {
 [data-testid="stExpander"],
 [data-testid="stVerticalBlockBorderWrapper"] {
   border-color: var(--instrument-gray) !important;
-  border-radius: var(--radius-md) !important;
+  border-radius: var(--radius-sm) !important;
   box-shadow: none !important;
 }
 
@@ -445,44 +493,53 @@ div[role="radiogroup"] label {
   background-color: var(--tactical-amber) !important;
 }
 
-/* ——— Images as payload ——— */
+/* ——— Images / video as payload ——— */
 [data-testid="stImage"] {
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
 [data-testid="stImage"] img {
   border: 1px solid var(--instrument-gray);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
 }
 
 [data-testid="stImageCaption"] {
-  font-family: var(--font-mono) !important;
-  font-size: 0.72rem !important;
-  letter-spacing: 0.04em !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.75rem !important;
+  letter-spacing: 0 !important;
   color: var(--muted-scope) !important;
-  margin-top: 0.4rem !important;
+  margin-top: 0.35rem !important;
 }
 
-/* ——— Toolbar rhythm under results ——— */
 .hangar-toolbar-gap {
   height: 0.35rem;
 }
 
-/* Hide Streamlit chrome noise */
+/* Hide Streamlit chrome noise — Deploy only.
+   Do NOT hide stToolbar / stHeader wholesale: that also removes the
+   sidebar expand control (stSidebarCollapsedControl) and leaves users
+   with no way to reopen Controls / mode / samples. */
 #MainMenu { visibility: hidden; }
 header[data-testid="stHeader"] {
   background: transparent !important;
 }
 footer { visibility: hidden; }
 
-/* Deploy button — mute portfolio-demo chrome */
-[data-testid="stToolbar"] {
-  opacity: 0.55;
-  transition: opacity var(--dur) var(--ease-out);
+.stDeployButton,
+[data-testid="stToolbar"] [data-testid="stAppDeployButton"],
+[data-testid="stToolbar"] .stAppDeployButton,
+div[data-testid="stAppDeployButton"] {
+  display: none !important;
 }
-[data-testid="stToolbar"]:hover {
-  opacity: 1;
+
+/* Always keep the control that reopens a collapsed sidebar */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
 }
 
 @media (max-width: 768px) {
@@ -495,7 +552,7 @@ footer { visibility: hidden; }
   }
 
   .main .block-container {
-    padding-top: 1.25rem !important;
+    padding-top: 1.15rem !important;
   }
 }
 
