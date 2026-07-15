@@ -179,12 +179,12 @@ p, label, .stMarkdown {
 }
 
 .hangar-product {
-  margin: 0 0 0.45rem 0;
+  margin: 0.15rem 0 0.5rem 0;
   font-family: var(--font-sans);
-  font-size: 0.9rem;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--muted-scope);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--briefing-white);
 }
 
 .hangar-brief {
@@ -199,7 +199,7 @@ p, label, .stMarkdown {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
-  margin: 0.65rem 0 0 0;
+  margin: 0.75rem 0 0 0;
   padding: 0.35rem 0.65rem;
   border: 1px solid var(--instrument-gray);
   border-radius: var(--radius-sm);
@@ -208,6 +208,11 @@ p, label, .stMarkdown {
   font-size: 0.78rem;
   font-weight: 500;
   color: var(--briefing-white);
+}
+
+/* Primary sample CTA sits above the quiet empty hint */
+.main [data-testid="stButton"] > button[kind="primary"] {
+  margin-top: 0.35rem;
 }
 
 .hangar-ready::before {
@@ -237,36 +242,36 @@ p, label, .stMarkdown {
 
 .hangar-empty {
   border: 1px solid var(--instrument-gray);
-  border-radius: var(--radius-md);
-  padding: 1.35rem 1.25rem;
-  background: var(--instrument-raised);
-  max-width: 36rem;
-  margin-top: 0.35rem;
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1rem;
+  background: transparent;
+  max-width: 32rem;
+  margin-top: 0.85rem;
 }
 
 .hangar-empty strong {
-  color: var(--briefing-white);
+  color: var(--muted-scope);
   display: block;
-  font-size: 1.05rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  letter-spacing: -0.015em;
-  margin-bottom: 0.35rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.25rem;
 }
 
 .hangar-empty p {
   color: var(--muted-scope);
   margin: 0;
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.82rem;
+  line-height: 1.5;
   max-width: 42ch;
 }
 
 .hangar-empty .hangar-empty-hint {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
+  margin-top: 0.55rem;
+  padding-top: 0.55rem;
   border-top: 1px solid var(--instrument-gray);
   font-family: var(--font-sans);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   letter-spacing: 0;
   color: var(--muted-scope);
 }
@@ -280,7 +285,7 @@ p, label, .stMarkdown {
 /* ——— Instrument readout strip ——— */
 .hangar-readouts {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1.5fr 1fr 1fr;
   gap: 0.55rem;
   margin: 0 0 1rem 0;
 }
@@ -289,8 +294,13 @@ p, label, .stMarkdown {
   background: var(--instrument-raised);
   border: 1px solid var(--instrument-gray);
   border-radius: var(--radius-sm);
-  padding: 0.6rem 0.75rem 0.65rem;
+  padding: 0.55rem 0.7rem 0.6rem;
   min-width: 0;
+}
+
+.hangar-readout.is-primary {
+  border-color: color-mix(in srgb, var(--tactical-amber) 35%, var(--instrument-gray));
+  background: color-mix(in srgb, var(--tactical-amber) 6%, var(--instrument-raised));
 }
 
 .hangar-readout .label {
@@ -307,7 +317,7 @@ p, label, .stMarkdown {
 .hangar-readout .value {
   display: block;
   font-family: var(--font-mono);
-  font-size: 1.35rem;
+  font-size: 1.15rem;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
@@ -315,8 +325,13 @@ p, label, .stMarkdown {
   line-height: 1.1;
 }
 
+.hangar-readout.is-primary .value {
+  font-size: 1.6rem;
+  color: var(--tactical-amber);
+}
+
 .hangar-readout .unit {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 500;
   color: var(--muted-scope);
   letter-spacing: 0;

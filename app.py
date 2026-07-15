@@ -174,6 +174,10 @@ def _load_sample_video() -> None:
 with st.spinner("Loading detection model…"):
     model = load_model(MODEL_PATH)
 
+_has_results = bool(st.session_state.processed_images) or bool(
+    st.session_state.processed_video_bytes
+)
+
 # --- SIDEBAR ---
 st.sidebar.markdown('<p class="hangar-side-label">Detection</p>', unsafe_allow_html=True)
 app_mode = st.sidebar.radio(
@@ -182,47 +186,275 @@ app_mode = st.sidebar.radio(
     help="Still images or a single video file.",
 )
 
-confidence_threshold = st.sidebar.slider(
-    "Confidence",
-    0.0,
-    1.0,
-    0.25,
-    0.05,
-    help="Minimum score to keep a box. Higher is stricter — fewer boxes.",
-)
-iou_threshold = st.sidebar.slider(
-    "Overlap (IoU)",
-    0.0,
-    1.0,
-    0.45,
-    0.05,
-    help="How much boxes may overlap. Lower reduces duplicate boxes.",
-)
+with st.sidebar.expander("Detection settings", expanded=_has_results):
+    confidence_threshold = st.slider(
+        "Confidence",
+        0.0,
+        1.0,
+        0.25,
+        0.05,
+        help="Minimum score to keep a box. Higher is stricter — fewer boxes.",
+    )
+    iou_threshold = st.slider(
+        "Overlap (IoU)",
+        0.0,
+        1.0,
+        0.45,
+        0.05,
+        help="How much boxes may overlap. Lower reduces duplicate boxes.",
+    )
+
 st.sidebar.markdown('<hr class="hangar-divider">', unsafe_allow_html=True)
 
-# --- SIDEBAR EXAMPLES (primary place to pick mode samples) ---
+
+def _process_uploaded_video(preview_container=None) -> bool:
+    """Process staged video bytes into annotated output. Returns True on success."""
+    video_bytes = st.session_state.uploaded_video_bytes
+    if not video_bytes:
+        st.error("No video staged for processing.")
+        return False
+
+    video_info = get_video_info(video_bytes)
+    if "error" in video_info:
+        st.error(f"Cannot process video: {video_info['error']}")
+        return False
+
+    start_time = time.time()
+    temp_dir = tempfile.mkdtemp()
+    output_video_path = str(Path(temp_dir) / "processed.mp4")
+    tfile_name = None
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tfile:
+        tfile.write(video_bytes)
+        tfile_name = tfile.name
+        cap = cv2.VideoCapture(tfile.name)
+
+    if not cap.isOpened():
+        st.error("Failed to open video file for processing")
+        return False
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    output_width = min(1920, video_info["width"])
+    output_height = min(1080, video_info["height"])
+
+    codecs_to_try = [
+        ("avc1", "H.264/AVC"),
+        ("mp4v", "MPEG-4"),
+        ("XVID", "XVID"),
+    ]
+
+    out = None
+    for codec_fourcc, codec_name in codecs_to_try:
+        fourcc = cv2.VideoWriter_fourcc(*codec_fourcc)
+        out = cv2.VideoWriter(
+            output_video_path, fourcc, video_info["fps"], (output_width, output_height)
+        )
+        if out.isOpened():
+            logging.info(f"Using {codec_name} codec for video output")
+            break
+        logging.warning(f"{codec_name} codec failed, trying next...")
+        out.release()
+
+    if out is None or not out.isOpened():
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(
+            output_video_path, fourcc, video_info["fps"], (output_width, output_height)
+        )
+        if out.isOpened():
+            logging.info("Using default mp4v codec as last resort")
+        else:
+            logging.error("All video codecs failed")
+
+    if not out.isOpened():
+        st.error("Failed to initialize video writer. Check codec support.")
+        cap.release()
+        return False
+
+    progress_bar = st.progress(0, text="Starting processing…")
+    total_detections_in_video = 0
+    last_good_annotated_frame = None
+    logging.info(
+        f"Starting video processing: {total_frames} frames, "
+        f"output size: {output_width}x{output_height}"
+    )
+
+    for frame_idx in range(total_frames):
+        ret, frame = cap.read()
+        if not ret:
+            logging.warning(f"Failed to read frame {frame_idx}")
+            break
+
+        if frame.shape[0] != output_height or frame.shape[1] != output_width:
+            frame = cv2.resize(frame, (output_width, output_height))
+
+        frame_to_write = frame.copy()
+
+        if frame_idx % FRAME_SKIP == 0:
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            try:
+                results = model.predict(
+                    source=frame_rgb,
+                    conf=confidence_threshold,
+                    iou=iou_threshold,
+                    verbose=False,
+                )
+                if results and len(results) > 0:
+                    result = results[0]
+                    annotated_frame = result.plot()
+                    detection_count = (
+                        len(result.boxes) if result.boxes is not None else 0
+                    )
+                    total_detections_in_video += detection_count
+
+                    if (
+                        annotated_frame.shape[0] != output_height
+                        or annotated_frame.shape[1] != output_width
+                    ):
+                        annotated_frame = cv2.resize(
+                            annotated_frame, (output_width, output_height)
+                        )
+
+                    last_good_annotated_frame = annotated_frame.copy()
+                    frame_to_write = annotated_frame
+
+                    if preview_container is not None and frame_idx % (FRAME_SKIP * 5) == 0:
+                        preview_container.image(
+                            cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+                        )
+
+                    logging.debug(f"Frame {frame_idx}: {detection_count} detections")
+            except Exception as e:
+                logging.error(f"Error processing frame {frame_idx}: {e}")
+                if last_good_annotated_frame is not None:
+                    frame_to_write = last_good_annotated_frame.copy()
+        elif last_good_annotated_frame is not None:
+            frame_to_write = last_good_annotated_frame.copy()
+
+        if (
+            frame_to_write.shape[0] != output_height
+            or frame_to_write.shape[1] != output_width
+        ):
+            frame_to_write = cv2.resize(
+                frame_to_write, (output_width, output_height)
+            )
+
+        success = out.write(frame_to_write)
+        if not success:
+            logging.error(f"Failed to write frame {frame_idx}")
+
+        if frame_idx % 10 == 0 or frame_idx == total_frames - 1:
+            progress_bar.progress(
+                (frame_idx + 1) / total_frames,
+                text=f"Frame {frame_idx + 1}/{total_frames}",
+            )
+
+    cap.release()
+    out.release()
+    end_time = time.time()
+
+    if not Path(output_video_path).exists():
+        st.error("Failed to create output video file")
+        return False
+
+    output_size = Path(output_video_path).stat().st_size
+    if output_size == 0:
+        st.error("Output video file is empty")
+        return False
+
+    logging.info(f"Video processing completed. Output file size: {output_size} bytes")
+
+    try:
+        test_cap = cv2.VideoCapture(output_video_path)
+        if test_cap.isOpened():
+            test_frame_count = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            test_duration = (
+                test_frame_count / video_info["fps"] if video_info["fps"] > 0 else 0
+            )
+            logging.info(
+                f"Output video validation: {test_frame_count} frames, "
+                f"{test_duration:.1f}s duration"
+            )
+        test_cap.release()
+    except Exception as e:
+        logging.warning(f"Video validation failed: {e}")
+
+    with open(output_video_path, "rb") as f:
+        st.session_state.processed_video_bytes = f.read()
+
+    processing_duration = end_time - start_time
+    st.session_state.video_metrics["total_detections"] = total_detections_in_video
+    st.session_state.video_metrics["duration"] = video_info["duration"]
+    st.session_state.video_metrics["fps"] = (
+        total_frames / processing_duration if processing_duration > 0 else 0
+    )
+
+    cleanup_errors = []
+    try:
+        if tfile_name and Path(tfile_name).exists():
+            Path(tfile_name).unlink()
+    except (FileNotFoundError, OSError) as e:
+        cleanup_errors.append(f"input file: {e}")
+
+    try:
+        if Path(output_video_path).exists():
+            Path(output_video_path).unlink()
+    except (FileNotFoundError, OSError) as e:
+        cleanup_errors.append(f"output file: {e}")
+
+    try:
+        if Path(temp_dir).exists():
+            Path(temp_dir).rmdir()
+    except (FileNotFoundError, OSError) as e:
+        cleanup_errors.append(f"temp directory: {e}")
+
+    if cleanup_errors:
+        logging.warning(f"Cleanup issues: {'; '.join(cleanup_errors)}")
+
+    st.success(f"Video processed in {processing_duration:.2f}s")
+    return True
+
+
+def _run_sample_video() -> bool:
+    """Load the built-in sample and run detection in one step."""
+    _load_sample_video()
+    return _process_uploaded_video()
+
+
+# --- SIDEBAR MORE SAMPLES (secondary path; main Run sample is primary) ---
+# One rate-limit probe per run — check_rate_limit consumes a slot when allowed.
+_rate_allowed, _rate_message, _rate_remaining = check_rate_limit()
 if app_mode == "Images":
-    st.sidebar.markdown('<p class="hangar-side-label">Examples</p>', unsafe_allow_html=True)
+    st.sidebar.markdown('<p class="hangar-side-label">More samples</p>', unsafe_allow_html=True)
     st.sidebar.caption("One click runs a sample detection.")
     for image_path in _example_image_paths():
         with st.sidebar.container(border=True):
             st.image(str(image_path), width="stretch")
-            if st.button("Run example", key=f"try_{image_path.name}", width="stretch"):
+            if st.button("Try this", key=f"try_{image_path.name}", width="stretch"):
                 try:
                     _run_sample_image(image_path)
                     st.rerun()
                 except (ValueError, OSError) as e:
-                    st.error(f"Failed to process example: {e}")
+                    st.error(f"Failed to process sample: {e}")
 elif app_mode == "Video":
-    st.sidebar.markdown('<p class="hangar-side-label">Examples</p>', unsafe_allow_html=True)
-    st.sidebar.caption("Load sample, then process in the main view.")
+    st.sidebar.markdown('<p class="hangar-side-label">More samples</p>', unsafe_allow_html=True)
+    st.sidebar.caption("One click loads and runs the sample clip.")
     example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
     if example_video_path.exists():
         with st.sidebar.container(border=True):
             st.video(str(example_video_path))
-            if st.button("Load example", width="stretch", key="ex_video"):
-                _load_sample_video()
-                st.rerun()
+            if st.button(
+                "Try this",
+                width="stretch",
+                key="ex_video",
+                disabled=not _rate_allowed,
+            ):
+                try:
+                    with st.spinner("Running sample video… longer clips take more time."):
+                        ok = _run_sample_video()
+                    if ok:
+                        st.rerun()
+                except (ValueError, OSError) as e:
+                    st.error(f"Failed to process sample: {e}")
 
 health = get_system_health()
 is_healthy, health_issues = is_system_healthy()
@@ -247,11 +479,11 @@ with st.sidebar.expander("System status", expanded=False):
     col1.metric("Active clients", rate_stats["active_clients"])
     col2.metric("Blocked clients", rate_stats["blocked_clients"])
 
-    rate_allowed, rate_message, remaining = check_rate_limit()
-    if rate_allowed:
-        st.caption(f"Rate limit: {remaining} requests remaining")
+    if _rate_allowed:
+        st.caption(f"Rate limit: {_rate_remaining} requests remaining")
     else:
         st.error("Rate limited")
+        st.caption(_rate_message)
 
     st.caption(f"Session {session['session_id'][:8]} · 10 req / 5 min")
 
@@ -266,9 +498,7 @@ Fine-tuned YOLOv8 for military aircraft detection in images and video — upload
     )
 
 # --- MAIN INTERFACE ---
-_has_payload = bool(st.session_state.processed_images) or bool(
-    st.session_state.processed_video_bytes
-)
+_has_payload = _has_results
 _ready_class = "hangar-ready" if is_healthy else "hangar-ready is-err"
 _ready_label = "Model ready" if is_healthy else "Model degraded"
 
@@ -278,6 +508,7 @@ if _has_payload:
         <div class="hangar-masthead">
           <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
           <h1>Aircraft Detection</h1>
+          <p class="hangar-product">Hangar Briefing Console</p>
           <p class="{_ready_class}">{_ready_label}</p>
         </div>
         """
@@ -288,7 +519,8 @@ else:
         <div class="hangar-masthead">
           <p class="hangar-kicker">YOLOv8 · aircraft detection</p>
           <h1>Aircraft Detection</h1>
-          <p class="hangar-brief">Upload media or run a sidebar example. Annotated boxes and inference timing land below.</p>
+          <p class="hangar-product">Hangar Briefing Console</p>
+          <p class="hangar-brief">Run sample below for a one-click detection, or upload your own. Annotated boxes and timing land in Results.</p>
           <p class="{_ready_class}">{_ready_label}</p>
         </div>
         """
@@ -390,13 +622,13 @@ if app_mode == "Images":
         st.html(
             f"""
             <div class="hangar-readouts">
+              <div class="hangar-readout is-primary">
+                <span class="label">Aircraft</span>
+                <span class="value">{total_detections}</span>
+              </div>
               <div class="hangar-readout">
                 <span class="label">Images</span>
                 <span class="value">{image_count}</span>
-              </div>
-              <div class="hangar-readout">
-                <span class="label">Aircraft</span>
-                <span class="value">{total_detections}</span>
               </div>
               <div class="hangar-readout">
                 <span class="label">Avg inference</span>
@@ -484,9 +716,9 @@ if app_mode == "Images":
             st.html(
                 """
                 <div class="hangar-empty">
-                  <strong>No images loaded</strong>
-                  <p>Drop images above, or use Examples in the sidebar to finish a detection in under a minute.</p>
-                  <p class="hangar-empty-hint">Next: sidebar <em>Run example</em>, or upload and hit <em>Run detection</em>.</p>
+                  <strong>Or bring your own</strong>
+                  <p>Drop images above, then Run detection.</p>
+                  <p class="hangar-empty-hint">Defaults are already set for the demo.</p>
                 </div>
                 """
             )
@@ -500,13 +732,13 @@ elif app_mode == "Video":
         st.html(
             f"""
             <div class="hangar-readouts">
+              <div class="hangar-readout is-primary">
+                <span class="label">Detections</span>
+                <span class="value">{total_det}</span>
+              </div>
               <div class="hangar-readout">
                 <span class="label">Duration</span>
                 <span class="value">{duration:.1f}<span class="unit">s</span></span>
-              </div>
-              <div class="hangar-readout">
-                <span class="label">Detections</span>
-                <span class="value">{total_det}</span>
               </div>
               <div class="hangar-readout">
                 <span class="label">Process rate</span>
@@ -564,205 +796,10 @@ elif app_mode == "Video":
             st.caption(rate_message)
 
         if st.button("Run detection", type="primary", width="stretch", disabled=not rate_allowed):
-            video_info = get_video_info(st.session_state.uploaded_video_bytes)
-
-            if "error" in video_info:
-                st.error(f"Cannot process video: {video_info['error']}")
-            else:
-                with st.spinner("Analyzing video… longer clips take more time."):
-                    start_time = time.time()
-                    temp_dir = tempfile.mkdtemp()
-                    output_video_path = str(Path(temp_dir) / "processed.mp4")
-
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tfile:
-                        tfile.write(st.session_state.uploaded_video_bytes)
-                        cap = cv2.VideoCapture(tfile.name)
-
-                    if not cap.isOpened():
-                        st.error("Failed to open video file for processing")
-                    else:
-                        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-
-                        output_width = min(1920, video_info["width"])
-                        output_height = min(1080, video_info["height"])
-
-                        codecs_to_try = [
-                            ("avc1", "H.264/AVC"),
-                            ("mp4v", "MPEG-4"),
-                            ("XVID", "XVID"),
-                        ]
-
-                        out = None
-                        for codec_fourcc, codec_name in codecs_to_try:
-                            fourcc = cv2.VideoWriter_fourcc(*codec_fourcc)
-                            out = cv2.VideoWriter(
-                                output_video_path, fourcc, video_info["fps"], (output_width, output_height)
-                            )
-                            if out.isOpened():
-                                logging.info(f"Using {codec_name} codec for video output")
-                                break
-                            else:
-                                logging.warning(f"{codec_name} codec failed, trying next...")
-                                out.release()
-
-                        if out is None or not out.isOpened():
-                            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-                            out = cv2.VideoWriter(
-                                output_video_path, fourcc, video_info["fps"], (output_width, output_height)
-                            )
-                            if out.isOpened():
-                                logging.info("Using default mp4v codec as last resort")
-                            else:
-                                logging.error("All video codecs failed")
-
-                        if not out.isOpened():
-                            st.error("Failed to initialize video writer. Check codec support.")
-                            cap.release()
-                        else:
-                            progress_bar = st.progress(0, text="Starting processing…")
-                            total_detections_in_video = 0
-                            last_good_annotated_frame = None
-                            logging.info(
-                                f"Starting video processing: {total_frames} frames, output size: {output_width}x{output_height}"
-                            )
-
-                            for frame_idx in range(total_frames):
-                                ret, frame = cap.read()
-                                if not ret:
-                                    logging.warning(f"Failed to read frame {frame_idx}")
-                                    break
-
-                                if frame.shape[0] != output_height or frame.shape[1] != output_width:
-                                    frame = cv2.resize(frame, (output_width, output_height))
-
-                                frame_to_write = frame.copy()
-
-                                if frame_idx % FRAME_SKIP == 0:
-                                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                                    try:
-                                        results = model.predict(
-                                            source=frame_rgb,
-                                            conf=confidence_threshold,
-                                            iou=iou_threshold,
-                                            verbose=False,
-                                        )
-                                        if results and len(results) > 0:
-                                            result = results[0]
-                                            annotated_frame = result.plot()
-                                            detection_count = (
-                                                len(result.boxes) if result.boxes is not None else 0
-                                            )
-                                            total_detections_in_video += detection_count
-
-                                            if (
-                                                annotated_frame.shape[0] != output_height
-                                                or annotated_frame.shape[1] != output_width
-                                            ):
-                                                annotated_frame = cv2.resize(
-                                                    annotated_frame, (output_width, output_height)
-                                                )
-
-                                            last_good_annotated_frame = annotated_frame.copy()
-                                            frame_to_write = annotated_frame
-
-                                            if frame_idx % (FRAME_SKIP * 5) == 0:
-                                                preview_container.image(
-                                                    cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-                                                )
-
-                                            logging.debug(f"Frame {frame_idx}: {detection_count} detections")
-                                    except Exception as e:
-                                        logging.error(f"Error processing frame {frame_idx}: {e}")
-                                        if last_good_annotated_frame is not None:
-                                            frame_to_write = last_good_annotated_frame.copy()
-                                elif last_good_annotated_frame is not None:
-                                    frame_to_write = last_good_annotated_frame.copy()
-
-                                if (
-                                    frame_to_write.shape[0] != output_height
-                                    or frame_to_write.shape[1] != output_width
-                                ):
-                                    frame_to_write = cv2.resize(
-                                        frame_to_write, (output_width, output_height)
-                                    )
-
-                                success = out.write(frame_to_write)
-                                if not success:
-                                    logging.error(f"Failed to write frame {frame_idx}")
-
-                                if frame_idx % 10 == 0 or frame_idx == total_frames - 1:
-                                    progress_bar.progress(
-                                        (frame_idx + 1) / total_frames,
-                                        text=f"Frame {frame_idx + 1}/{total_frames}",
-                                    )
-
-                            cap.release()
-                            out.release()
-                            end_time = time.time()
-
-                            if not Path(output_video_path).exists():
-                                st.error("Failed to create output video file")
-                            else:
-                                output_size = Path(output_video_path).stat().st_size
-                                if output_size == 0:
-                                    st.error("Output video file is empty")
-                                else:
-                                    logging.info(
-                                        f"Video processing completed. Output file size: {output_size} bytes"
-                                    )
-
-                                    try:
-                                        test_cap = cv2.VideoCapture(output_video_path)
-                                        if test_cap.isOpened():
-                                            test_frame_count = int(test_cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                                            test_duration = (
-                                                test_frame_count / video_info["fps"]
-                                                if video_info["fps"] > 0
-                                                else 0
-                                            )
-                                            logging.info(
-                                                f"Output video validation: {test_frame_count} frames, {test_duration:.1f}s duration"
-                                            )
-                                        test_cap.release()
-                                    except Exception as e:
-                                        logging.warning(f"Video validation failed: {e}")
-
-                                    with open(output_video_path, "rb") as f:
-                                        st.session_state.processed_video_bytes = f.read()
-
-                                    st.session_state.video_metrics["total_detections"] = (
-                                        total_detections_in_video
-                                    )
-                                    st.session_state.video_metrics["duration"] = video_info["duration"]
-                                    processing_duration = end_time - start_time
-                                    st.session_state.video_metrics["fps"] = (
-                                        total_frames / processing_duration if processing_duration > 0 else 0
-                                    )
-
-                                    cleanup_errors = []
-                                    try:
-                                        if Path(tfile.name).exists():
-                                            Path(tfile.name).unlink()
-                                    except (FileNotFoundError, OSError) as e:
-                                        cleanup_errors.append(f"input file: {e}")
-
-                                    try:
-                                        if Path(output_video_path).exists():
-                                            Path(output_video_path).unlink()
-                                    except (FileNotFoundError, OSError) as e:
-                                        cleanup_errors.append(f"output file: {e}")
-
-                                    try:
-                                        if Path(temp_dir).exists():
-                                            Path(temp_dir).rmdir()
-                                    except (FileNotFoundError, OSError) as e:
-                                        cleanup_errors.append(f"temp directory: {e}")
-
-                                    if cleanup_errors:
-                                        logging.warning(f"Cleanup issues: {'; '.join(cleanup_errors)}")
-
-                                    st.success(f"Video processed in {processing_duration:.2f}s")
-                                    st.rerun()
+            with st.spinner("Analyzing video… longer clips take more time."):
+                ok = _process_uploaded_video(preview_container=preview_container)
+            if ok:
+                st.rerun()
     else:
         st.header("Video")
         example_video_path = ASSETS_DIR / EXAMPLE_VIDEO_FILE
@@ -799,15 +836,26 @@ elif app_mode == "Video":
                     st.rerun()
         else:
             if example_video_path.exists():
-                if st.button("Load sample", type="primary", width="stretch", key="main_load_sample"):
-                    _load_sample_video()
-                    st.rerun()
+                if st.button(
+                    "Run sample",
+                    type="primary",
+                    width="stretch",
+                    key="main_run_sample_video",
+                    disabled=not _rate_allowed,
+                ):
+                    try:
+                        with st.spinner("Running sample video… longer clips take more time."):
+                            ok = _run_sample_video()
+                        if ok:
+                            st.rerun()
+                    except (ValueError, OSError) as e:
+                        st.error(f"Failed to process sample: {e}")
             st.html(
                 """
                 <div class="hangar-empty">
-                  <strong>No video loaded</strong>
-                  <p>Upload a short clip (≤30s), or use Examples in the sidebar, then run detection.</p>
-                  <p class="hangar-empty-hint">Next: sidebar <em>Load example</em>, or upload and hit <em>Run detection</em>.</p>
+                  <strong>Or bring your own</strong>
+                  <p>Upload a short clip (≤30s), then Run detection.</p>
+                  <p class="hangar-empty-hint">Defaults are already set for the demo.</p>
                 </div>
                 """
             )
